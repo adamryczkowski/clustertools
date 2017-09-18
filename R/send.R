@@ -119,3 +119,27 @@ receive_big_object<-function(cl, object_name, compress=NULL) {
   }
   return(obj)
 }
+
+execute_remote<-function(cl, expr) {
+  expr <- substitute(expression)
+
+  job <- BackgroundTask$new()
+
+  job$run_task({
+    stats<-get_current_load(private$cl_connection, private$remote_tmp_dir_, private$cl_id_)
+    start_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
+
+    ans<-parallel::clusterEvalQ(cl = private$cl_connection, expression)
+
+    stats<-get_current_load(private$cl_connection, private$remote_tmp_dir_, private$cl_id_)
+    end_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
+    return(list(start_stats=start_stats, ans=ans, end_stats=end_stats))
+  }
+  )
+  return(job)
+}
+
+# srv_loc<-RemoteServer$new('localhost')
+# debugonce(srv_loc$print)
+# debugonce(srv_loc$pri)
+# print(srv_loc)

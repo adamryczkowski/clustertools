@@ -2,8 +2,8 @@
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(host_address, username=NULL,port=11001) {
+      browser()
       private$host_address_<-host_address
-      private$job_ <- BackgroundTask$new()
 
       if(is.null(username)) {
         username<-system('whoami', intern = TRUE)
@@ -12,156 +12,320 @@ RemoteServer<-R6::R6Class("RemoteServer",
       myip=system(paste0("ip addr show ", default_if, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
 
-      cl <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
-      private$job_$run_task(
-        {
-          a=get_cpu_capabilies(cl)
-          perfscript_remote_path<-parallel::clusterEvalQ(cl, {
-            tmpfile_txt <- tempfile(fileext = '.sh')
-            tmpfile <- file(tmpfile_txt)
-            script='#!/usr/bin/env bash
-pgid=$(ps -o pgid= $1)
-sizes() { /bin/ps -o rss= -$1;}
-peak=0
-while sizes=$(sizes $pgid)
-do
-    set -- $sizes
-    sample=$((${@/#/+}))
-    let peak="sample > peak ? sample : peak"
-    sleep 0.1
-done
-echo "$peak" >&2
-'
-            writeLines(script, tmpfile)
-            close(tmpfile)
-            Sys.chmod(tmpfile_txt, mode = "0777", use_umask = TRUE)
-            tmpfile_txt
-          })
-          parallel::stopCluster(cl)
-          c(a, perfscript_remote_path=perfscript_remote_path)
-        })
       private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+      private$remote_tmp_dir_<-copy_scripts_to_server(private$cl_connection_)
       private$cl_pid_ <- parallel::clusterEvalQ(private$cl_connection_, Sys.getpid())
+
+
+      run_background_task(private$cl_connection_,
+                          pid=private$cl_pid_,
+                          script_path = file.path(private$remote_tmp_dir_, 'peak_mem.sh'))
+
+      private$job_history_<-JobHistory$new(stats_function=function() private$get_current_stats(flag_execute_on_aux = FALSE))
       private$cl_aux_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+#      cl<-parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+      cl<-private$cl_aux_connection_
+
+      private$capabilities_ <- BackgroundTask$new()
+      private$capabilities_$run_task(c(get_cpu_capabilies(cl), remote_tmp_dir=private$remote_tmp_dir_))
     },
 
     finalize=function() {
       parallel::stopCluster(private$cl_connection_)
+      parallel::stopCluster(private$cl_aux_connection_)
     },
 
     print=function() {
-      rap<-paste0("Remote host ", self$host_address, " with ",
+      rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, " with ",
                   self$cpu_cores, " core CPU and ",
                   utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
-                  "CPU speed: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n",
+                  "CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n",
                   "net_send_speed: ", utils:::format.object_size(self$net_send_speed*1000, "auto"), "/second\n",
                   "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n\n"
       )
       cat(rap)
-      current_load<-get_current_load(private$cl_aux_connection_)
-      rap<-paste0("current CPU utilization: ", current_load$cpuload, "%\n",
-                  "free memory: ", utils:::format.object_size(current_load$memkb*1024, "auto"), "\n")
-      cat(rep)
+      current_load <- self$get_current_load()
+
+      if(!is.null(current_load$command)) {
+        rap<-paste0("\nCurrent task: ", current_load$command, "\n",
+                    "Average CPU utilization: ", current_load$cpuload, "%\n",
+                    "CPU time on task: ", lubridate::as.duration(current_load$cputime), "\n",
+                    "Task current memory usage (delta): ",
+                    utils:::format.object_size(current_load$memkb*1024, "auto"), " (",
+                    utils:::format.object_size(current_load$memkb_delta*1024, "auto"), ")\n",
+                    "Task peak memory usage (delta): ",
+                    utils:::format.object_size(current_load$peak_memkb*1024, "auto"), " (",
+                    utils:::format.object_size(current_load$peak_memkb_delta*1024, "auto"),")\n"
+                    )
+        cat(rap)
+      }
+
+      total_load <- self$get_current_load(flag_total_load = TRUE)
+      rap<-paste0("\nTotal runnning statistics: \n",
+                  "Average CPU utilization: ", total_load$cpuload, "%\n",
+                  "CPU time spent: ", lubridate::as.duration(total_load$cputime), "\n",
+                  if(is.null(current_load$command)) {
+                    paste0("Current memory usage: ", utils:::format.object_size(total_load$memkb*1024, "auto"), "\n")
+                  } else {""},
+                  "Peak memory usage: ",
+                  utils:::format.object_size(total_load$peak_memkb*1024, "auto"), "\n",
+                  "Free memory: ", utils:::format.object_size(total_load$freememkb*1024, "auto"), "\n"
+      )
+      cat(rap)
     },
-    get_aux_connection=function() {private$cl_aux_connection_},
-    get_job=function() {private$job},
-    get_pid=function() {private$cl_pid_},
-    spawn_job=function(remote_expr, export_values) {
-      if(!private$job_$is_job_running()){
-        private$job_$run_task(expr)
+
+    get_current_load=function(flag_total_load=FALSE) {
+      if(flag_total_load) {
+        running_job<-private$job_history_$get_first_job()
       } else {
-        stop("A background job is already running!")
+        running_job<-private$job_history_$get_currently_running_job()
       }
-      if(! 'list' %in%  class(export_values)) {
-        stop("export_values should be a list")
+      current_load<-get_current_load(cl=private$cl_aux_connection_, script_dir = private$remote_tmp_dir_, pid = private$cl_pid_)
+
+
+      if(is.null(running_job)) {
+        ans <- list(
+          memkb=current_load$memkb,
+          peak_memkb=current_load$peakmemkb,
+          freememkb=current_load$freememkb)
+      } else {
+        last_stats <- running_job$get_job_stats_before()
+        ans<-compute_load_between(load_before = last_stats, load_after = current_load)
       }
-      private$job_$run_task({
-
-        send_big_object(private$cl_connection_, object = export_values, remote_name = '.tmp.export')
-        parallel::clusterExport(private$cl_connection_, varlist = names(export_values), envir = export_values)
-        ans<-parallel::clusterEvalQ(private$cl_connection_, remote_expr)
-        eval(substitute(parallel::clusterEvalQ(private$cl_connection_, rm(n)), list(n=names(export_values))))
-
-        a=get_cpu_capabilies(cl)
-        parallel::stopCluster(cl)
-        return(a)
-        })
-
+      return(ans)
     },
-    call_function=function(function_name, arg_list) {
 
+    get_total_load=function() {
+      self$get_current_load(flag_total_load = TRUE)
     },
-    is_job_running=function(expr) {
-      private$job_$is_job_running()
+
+    get_last_job=function() {
+      last_job_nr <- private$job_history_$get_running_job_nr()
+      if(is.na(last_job_nr)) {
+        last_job_nr <- private$job_history_$get_last_finished_job_nr()
+      }
+      last_job <- private$job_history_$get_job_by_nr(last_job_nr)
+
+      ans<-RemoteJob$new(job_entry=last_job, remote_server=self,
+                         job_history=private$job_history_, job_nr=last_job_nr)
+      return(ans)
     },
-    send_objects=function(named_list_of_objects, flag_wait=FALSE) {
-      private$job_$wait_for_task_finish()
+
+    is_busy=function() {
+      return(private$job_history_$is_job_running())
+    },
+
+    get_job_by_name=function(jobname) {
+      jobnrs<-private$job_history_$get_jobnr_by_name(jobname)
+      if(length(jobnrs)==0) {
+        return(list())
+      }
+      if(length(jobnrs)==1) {
+        ans<-list(private$job_history_$get_job_by_nr(jobnrs))
+      } else {
+        ans<-list()
+        for(i in seq(1,  length(jobnrs))){
+          ans<-c(ans, list(private$job_history_$get_job_by_nr(jobnrs)))
+        }
+      }
+
+      return(ans)
+    },
+
+    .get_aux_connection=function() {private$cl_aux_connection_},
+    .get_pid=function() {private$cl_pid_},
+    .get_jobs=function(job_name=NULL) { private$job_history_},
+
+    get_job_return_value=function(jobname, flag_remove_value=TRUE) {
+      job_nrs<-private$job_history_$get_jobnr_by_name(jobname)
+
+      if(length(job_nrs)==0) {
+        return(NULL)
+      }
+      if(length(job_nrs)==1) {
+        job<-private$job_history_$get_job_by_nr(job_nrs)
+        ans<-list(RemoteJob$new(job_entry=job, remote_server=self,
+                           job_history=private$job_history_, job_nr=job_nrs))
+      } else {
+        ans<-list()
+        for(job_nr in job_nrs) {
+          job<-private$job_history_$get_job_by_nr(job_nr)
+          ans<-c(ans, list(RemoteJob$new(job_entry=job, remote_server=self,
+                                  job_history=private$job_history_, job_nr=job_nr)))
+        }
+      }
+      jobnames<-sapply(ans, function(j) j$name )
+      retvalue<-lapply(ans, function(j) {
+        if(j$is_task_finished()) {
+          j$get_return_value(flag_remove_value)
+        } else{
+          simpleError("Job has not finished")
+        }})
+      setNames(retvalue, jobnames)
+      return(retvalue)
+    },
+
+    execute_job=function(jobname, expression, flag_wait=FALSE, timeout=0, flag_clear_memory=TRUE) {
+      expr<-substitute(expression)
+      ans<-eval(substitute(
+        private$job_history_$run_task(jobname, {
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          start_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem=stats$memkb)
+
+          ans<-parallel::clusterEvalQ(cl = cl, expression)
+
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          end_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem=stats$memkb,
+                          freememkb=stats$freememkb
+                          )
+          return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+        }),
+        list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+             expression=expr)))
+      job<-ans$job
+      job_nr<-ans$jobnr
+
+      if(flag_wait) {
+        flag_is_running<-!(job$wait_until_finished(timeout=timeout))
+      } else {
+        flag_is_running<-TRUE
+      }
+
+      if(flag_is_running) {
+        jobobj <- RemoteJob$new(job_entry=job, remote_server=self,
+                                job_history=private$job_history_, job_nr=job_nr)
+        return(jobobj)
+      } else {
+        ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        return(ans)
+      }
+    },
+
+    send_objects=function(named_list_of_objects, flag_wait=FALSE, job_name=NULL) {
       if(!'list' %in% class(named_list_of_objects)) {
         stop("named_list_of_objects must be a named list of objects to upload")
       }
       named_list_of_objects<-named_list_of_objects
-      private$job_$run_task(
-        send_big_objects(private$cl_connection_, objects = named_list_of_objects)
+
+      if(!flag_wait) {
+        job<-self$create_job(job_name)
+
+        job$run_task(
+          send_big_objects(private$cl_connection_, objects = named_list_of_objects)
         )
-      if(flag_wait) {
-        private$job_$wait_for_task_finish()
+        return(job)
+      } else {
+        send_big_objects(private$cl_connection_, objects = named_list_of_objects)
       }
     },
-    send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE) {
-      private$job_$wait_for_task_finish()
-      private$job_$run_task(
+
+    send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE, job_name=NULL) {
+      if(!flag_wait) {
+        job<-self$create_job(job_name)
+
+        job$run_task(
+          send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
+                    flag_check_first=flag_check_first)
+        )
+        return(job)
+      } else {
         send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
                   flag_check_first=flag_check_first)
-        )
-      if(flag_wait) {
-        private$job_$wait_for_task_finish()
       }
     }
+
   ),
 
-
   active = list(
-    host_address      = function() {private$fill_capabilities(TRUE); private$host_address_},
-    cpu_cores         = function() {private$fill_capabilities(TRUE); private$cpu_cores_},
-    perfscript_remote_path = function() {private$fill_capabilities(TRUE); private$perfscript_remote_path_},
-    cpu_speed         = function() {private$fill_capabilities(TRUE); private$cpu_speed_},
-    mem_size          = function() {private$fill_capabilities(TRUE); private$mem_size_},
-    net_send_speed    = function() {private$fill_capabilities(TRUE); private$net_send_speed_},
-    net_receive_speed = function() {private$fill_capabilities(TRUE); private$net_receive_speed_},
+    host_address      = function() {private$host_address_},
+    host_name      = function() {private$fill_capabilities(TRUE); private$capabilities_$host_name},
+    cpu_cores         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_cores},
+    cpu_speed         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_speed},
+    mem_size          = function() {private$fill_capabilities(TRUE); private$capabilities_$mem_size},
+    net_send_speed    = function() {private$fill_capabilities(TRUE); private$capabilities_$net_send_speed},
+    net_receive_speed = function() {private$fill_capabilities(TRUE); private$capabilities_$net_receive_speed},
+    remote_tmp_dir = function() {private$remote_tmp_dir_},
     cl_connection     = function() {private$cl_connection_},
     cl_aux_connection     = function() {private$cl_aux_connection_},
-    job = function() {private$job_}
+#    job = function() {private$job_},
+    job_history = function() {private$job_history_}
   ),
   private = list(
     cl_aux_connection_=NA,
     cl_connection_=NA,
     cl_pid_=NA,
-    perfscript_remote_path_=NA,
+    capabilities_=NA,
     host_address_=NA,
-    net_send_speed_=NA,
-    net_receive_speed_=NA,
-    cpu_speed_=NA,
-    cpu_cores_=NA,
-    mem_size_=NA,
-    job_=NA,
-    fill_capabilities=function(flag_wait) {
-      if(!is.na(private$cpu_cores_)) {
-        return()
-      }
-      if(!flag_wait && private$job_$is_task_running()) {
-        return()
-      }
+    remote_tmp_dir_=NA,
+    job_history_= NA,
 
-      capabilities<-private$job_$get_task_return_value()
-      private$cpu_cores_<-capabilities$cores
-      private$cpu_speed_<-capabilities$speed
-      private$mem_size_<-capabilities$memkb * 1024
-      private$net_send_speed_<-capabilities$net_send_speed
-      private$net_receive_speed_<-capabilities$net_receive_speed
-      private$perfscript_remote_path_<-capabilities$perfscript_remote_path
+    fill_capabilities=function(flag_wait=TRUE) {
+      if('BackgroundTask' %in% class(private$capabilities_)){
+        job<-private$capabilities_
+        if(job$is_task_running() && !flag_wait )  {
+          return(NULL)
+        }
+        capabilities<-job$get_task_return_value()
+        ans<-list(
+          cpu_cores =capabilities$cores,
+          cpu_speed =capabilities$speed,
+          mem_size =capabilities$memkb * 1024,
+          net_send_speed =capabilities$net_send_speed,
+          net_receive_speed =capabilities$net_receive_speed,
+          host_name =capabilities$host_name
+        )
+        private$capabilities_<-ans
+      }
+    },
+
+    get_last_executed_job_nr=function() {
+      if(length(private$jobs_)>private$last_finished_job_) {
+        for(i in seq(private$last_finished_job_, length(private$jobs_))) {
+          job <- private$last_finished_job_[[i]]
+          if (job$is_task_running()) {
+            break
+          }
+          private$last_finished_job_ <- private$last_finished_job_ + 1
+        }
+      }
+      return(private$last_finished_job_)
+    },
+
+    #Returns stats from the time, when the current job has been started
+    get_last_stats=function() {
+      last_job_idx<-get_last_executed_job_nr()
+      if(last_job_idx<=length(private$counters_)+1) {
+        last_stats<-private$counters_[[last_job_idx+1]]
+      } else {
+        last_stats<-NA
+      }
+      return(last_stats)
+    },
+
+    get_current_stats=function(flag_execute_on_aux=TRUE, flag_reset_peak_mem=FALSE) {
+      if(flag_execute_on_aux) {
+        cl <- private$cl_aux_connection_
+      } else {
+        cl <- private$cl_connection_
+      }
+      ans<-get_current_load(cl=cl, script_dir = private$remote_tmp_dir_, pid = private$cl_pid_)
+      return(list(wall_time=ans$wall_time,
+                  cpu_time=ans$cpu_time,
+                  mem=ans$memkb,
+                  peak_mem=ans$peakmemkb,
+                  freememkb=ans$freememkb
+      ))
+      if(flag_reset_peak_mem) {
+        file<-file.path(private$remote_tmp_dir_, 'reset_peak_mem.sh')
+        eval(substitute(parallel::clusterEvalQ(system(file)),
+                        list(file=file)))
+      }
     }
+
   ),
-  cloneable = FALSE
+
+  cloneable = FALSE,
+  lock_class = TRUE
 )
 
 # srv1<-RemoteServer$new("rstudio")
