@@ -112,8 +112,6 @@ JobHistory<-R6::R6Class("JobHistory",
       return(length(private$jobs_) - private$last_finished_job_ - self$is_job_running())
     }
 
-
-
   ),
 
 
@@ -171,15 +169,19 @@ JobEntry<-R6::R6Class("JobEntry",
         } else {
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
           if(!is.null(ans)) {
-#            browser()
-            private$stats_before2_ <- ans$start_stats
-            private$stats_after_ <- ans$end_stats
-            if(length(ans$ans)==1){
-              private$ans_ <- ans$ans[[1]]
+            if(!'try-error' %in% class(ans)) {
+              private$stats_before2_ <- ans$start_stats
+              private$stats_after_ <- ans$end_stats
+              if(length(ans$ans)==1){
+                private$ans_ <- ans$ans[[1]]
+              } else {
+                private$ans_ <- ans$ans
+              }
+              private$job_ <- NA
             } else {
-              private$ans_ <- ans$ans
+              browser()
+              private$ans_ <- ans
             }
-            private$job_ <- NA
           } else {
             browser()
           }

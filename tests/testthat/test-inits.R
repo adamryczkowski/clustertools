@@ -51,11 +51,30 @@ test_that("Executing a simple job remotely", {
   expect_error(a$peek_return_value())
 })
 
+test_that("Executing a job that makes an error", {
+  b<-BackgroundTask$new()
+  b$run_task(expr = list()-1)
+  a<-b$get_task_return_value()
+  expect_true('try-error' %in% class(a))
+
+  options(warn=2)
+  srv_loc<-RemoteServer$new('localhost')
+  out<-srv_loc$execute_job('error_job', list()-1, flag_wait = FALSE, flag_clear_memory = FALSE)
+
+  expect_error(out$peek_return_value(flag_wait_until_finished = TRUE))
+
+  astat<-out$get_current_statistics()
+  expect_true("list" %in% class(astat))
+  expect_equal(srv_loc$get_count_statistics()$finished, 1)
+})
+
 test_that("Copying object to remote", {
   options(warn=2)
   srv_loc<-RemoteServer$new('localhost')
   browser()
-  srv_loc$send_objects(named_list_of_objects = list(a=1:10))
+  a<-srv_loc$send_objects(named_list_of_objects = list(a=1:10))
+  a2<-srv_loc$execute_job('get_a', a, flag_wait = TRUE, flag_clear_memory = FALSE)
+
   srv_loc$spawn_job(named_list_of_objects = list(a=1:10))
   debugonce(RemoteServer$new)
 

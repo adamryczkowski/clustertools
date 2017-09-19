@@ -61,14 +61,20 @@ RemoteJob<-R6::R6Class("RemoteJob",
 
     peek_return_value = function(flag_wait_until_finished=FALSE, timeout=0) {
       if(flag_wait_until_finished) {
-        flag_ready<-private$job_entry_$wait_for_task_finish(timeout=timeout)
+        flag_ready<-private$job_entry_$wait_until_finished(timeout=timeout)
         if(!flag_ready) {
           return(simpleError("Job is still executing"))
         }
       }
       ans<-private$job_entry_$get_return_value(flag_clear_memory=FALSE)
-      if('simpleError' %in% class(ans)) {
-        stop(ans$message)
+      if('simpleError' %in% class(ans)){
+        if(stringr::str_detect(ans$message, pattern = stringr::fixed("one node produced an error: "))) {
+          stop(paste0("The node ", private$host_address_, " returned an error:\n«",
+                      stringr::str_replace(ans$message, pattern = stringr::fixed("one node produced an error: "),replacement = ""),
+                      "»\nwhen processing the command:\n   ", private$job_entry_$command))
+        } else {
+          stop(ans$message)
+        }
       }
       return(ans)
     },

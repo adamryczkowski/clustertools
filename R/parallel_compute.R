@@ -194,7 +194,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
           stats<-get_current_load(cl, remote_tmp_dir, pid)
           start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
-          ans<-parallel::clusterEvalQ(cl = cl, expression)
+          ans<-tryCatch({
+            parallel::clusterEvalQ(cl = cl, expression)
+          }, error=function(e) e)
 
           stats<-get_current_load(cl, remote_tmp_dir, pid)
           end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
@@ -219,6 +221,11 @@ RemoteServer<-R6::R6Class("RemoteServer",
         return(jobobj)
       } else {
         ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        if('simpleError' %in% class(ans)){
+          stop(paste0("The node ", private$host_address_, " returned an error:\n«",
+                      stringr::str_replace(ans$message, pattern = stringr::fixed("one node produced an error: "),replacement = ""),
+                      "»\nwhen processing the command:\n   ", command))
+        }
         return(ans)
       }
     },
@@ -227,17 +234,45 @@ RemoteServer<-R6::R6Class("RemoteServer",
       if(!'list' %in% class(named_list_of_objects)) {
         stop("named_list_of_objects must be a named list of objects to upload")
       }
-      named_list_of_objects<-named_list_of_objects
+      browser()
+      ans<-eval(substitute(
+        private$job_history_$run_task(job_name, {
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
-      if(!flag_wait) {
-        job<-self$create_job(job_name)
+          ans<-tryCatch({
+            send_big_objects(cl, objects = named_list_of_objects)
+            paste0(if(length(named_list_of_objects)==1) {
+              "1 object sent."
+            } else {
+              paste0(length(named_list_of_objects), " objects sent.")
+            })
+          }, error=function(e) e)
 
-        job$run_task(
-          send_big_objects(private$cl_connection_, objects = named_list_of_objects)
-        )
-        return(job)
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
+                          free_mem_kb=stats$free_mem_kb
+          )
+          return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+        }, command=''),
+        list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+             named_list_of_objects=named_list_of_objects)))
+      job<-ans$job
+      job_nr<-ans$jobnr
+
+      if(flag_wait) {
+        flag_is_running<-!(job$wait_until_finished(timeout=timeout))
       } else {
-        send_big_objects(private$cl_connection_, objects = named_list_of_objects)
+        flag_is_running<-TRUE
+      }
+
+      if(flag_is_running) {
+        jobobj <- RemoteJob$new(job_entry=job, remote_server=self,
+                                job_history=private$job_history_, job_nr=job_nr)
+        return(jobobj)
+      } else {
+        ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        return(ans)
       }
     },
 
