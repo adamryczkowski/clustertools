@@ -3,13 +3,13 @@ find_default_if<-function(){
 }
 
 get_cpu_capabilies<-function(cl) {
-  capabilities<-parallel::clusterEvalQ(cl, list(memkb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
+  capabilities<-parallel::clusterEvalQ(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
                                                 cores=system('grep "^core id" /proc/cpuinfo | sort -u | wc -l', intern=TRUE),
                                                 speed=1/system.time(system('dd if=/dev/zero bs=3 count=1000000 2>/dev/null  | md5sum  >/dev/null'))[[3]],
                                                 host_name=system('hostname', intern = TRUE)
   ))
   capabilities<-capabilities[[1]]
-  capabilities$memkb<-as.numeric(capabilities$memkb)
+  capabilities$mem_kb<-as.numeric(capabilities$mem_kb)
   capabilities$cores<-as.numeric(capabilities$cores)
 
   obj<-readBin('/dev/urandom', what=raw(), n=2*1000*1000)
@@ -27,9 +27,9 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
     stats<-eval(substitute(
       parallel::clusterEvalQ(cl, list(
         cpuload=as.numeric(system("LC_NUMERIC=\"en_GB.UTF-8\"; top -b -d 0.3 -n2 | grep \"Cpu(s)\" 2>/dev/null | awk '{print $2+$4}' | tail -n1", intern = TRUE)),
-        freememkb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
-        memkb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
-        peakmemkb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
+        free_mem_kb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
+        mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
+        peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
         cpu_time=as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)),
         wall_time=as.numeric(Sys.time())
       ))[[1]],
@@ -37,9 +37,9 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
   } else {
     stats<-eval(substitute(
       parallel::clusterEvalQ(cl, list(
-        freememkb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
-        memkb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
-        peakmemkb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
+        free_mem_kb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
+        mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
+        peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
         cpu_time=as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)),
         wall_time=as.numeric(Sys.time())
       ))[[1]],
@@ -114,13 +114,12 @@ run_background_task<-function(cl, script_path, pid) {
 
 compute_load_between=function(load_before, load_after) {
   ans<-list(cpuload=(load_after$cpu_time - load_before$cpu_time)/(load_after$wall_time - load_before$wall_time),
-            memkb=load_after$mem,
-            peak_memkb=load_after$peak_mem,
-            peak_memkb_delta=load_after$peak_mem-load_before$mem,
-            memkb_delta=load_after$mem - load_before$mem,
-            cputime=load_after$cpu_time - load_before$cpu_time,
-            cputime=load_after$wall_time - load_before$wall_time,
-            freememkb=load_after$freememkb,
+            mem_kb=load_after$mem_kb,
+            peak_mem_kb=load_after$peak_mem_kb,
+            peak_mem_kb_delta=load_after$peak_mem_kb-load_before$mem_kb,
+            mem_kb_delta=load_after$mem_kb - load_before$mem_kb,
+            cpu_time=load_after$cpu_time - load_before$cpu_time,
+            free_mem_kb=load_after$free_mem_kb,
             wall_time=load_after$wall_time - load_before$wall_time)
   return(ans)
 }

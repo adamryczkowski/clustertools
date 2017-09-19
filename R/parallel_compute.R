@@ -2,7 +2,7 @@
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(host_address, username=NULL,port=11001) {
-      browser()
+#      browser()
       private$host_address_<-host_address
 
       if(is.null(username)) {
@@ -49,29 +49,38 @@ RemoteServer<-R6::R6Class("RemoteServer",
       if(!is.null(current_load$command)) {
         rap<-paste0("\nCurrent task: ", current_load$command, "\n",
                     "Average CPU utilization: ", current_load$cpuload, "%\n",
-                    "CPU time on task: ", lubridate::as.duration(current_load$cputime), "\n",
+                    "CPU time on task: ", lubridate::as.duration(current_load$cpu_time), "\n",
                     "Task current memory usage (delta): ",
-                    utils:::format.object_size(current_load$memkb*1024, "auto"), " (",
-                    utils:::format.object_size(current_load$memkb_delta*1024, "auto"), ")\n",
+                    utils:::format.object_size(current_load$mem_kb*1024, "auto"), " (",
+                    utils:::format.object_size(current_load$mem_kb_delta*1024, "auto"), ")\n",
                     "Task peak memory usage (delta): ",
-                    utils:::format.object_size(current_load$peak_memkb*1024, "auto"), " (",
-                    utils:::format.object_size(current_load$peak_memkb_delta*1024, "auto"),")\n"
+                    utils:::format.object_size(current_load$peak_mem_kb*1024, "auto"), " (",
+                    utils:::format.object_size(current_load$peak_mem_kb_delta*1024, "auto"),")\n"
                     )
         cat(rap)
       }
-
       total_load <- self$get_current_load(flag_total_load = TRUE)
       rap<-paste0("\nTotal runnning statistics: \n",
                   "Average CPU utilization: ", total_load$cpuload, "%\n",
-                  "CPU time spent: ", lubridate::as.duration(total_load$cputime), "\n",
+                  "CPU time spent: ", lubridate::as.duration(total_load$cpu_time), "\n",
                   if(is.null(current_load$command)) {
-                    paste0("Current memory usage: ", utils:::format.object_size(total_load$memkb*1024, "auto"), "\n")
+                    paste0("Current memory usage: ", utils:::format.object_size(total_load$mem_kb*1024, "auto"), "\n")
                   } else {""},
                   "Peak memory usage: ",
-                  utils:::format.object_size(total_load$peak_memkb*1024, "auto"), "\n",
-                  "Free memory: ", utils:::format.object_size(total_load$freememkb*1024, "auto"), "\n"
+                  utils:::format.object_size(total_load$peak_mem_kb*1024, "auto"), "\n",
+                  "Free memory: ", utils:::format.object_size(total_load$free_mem_kb*1024, "auto"), "\n",
+                  "Total number of jobs finished / still in queue: ",
+                  private$job_history_$get_finished_job_count(), " / ", private$job_history_$get_queued_job_count()
       )
       cat(rap)
+    },
+
+    get_count_statistics=function() {
+      return(list(
+        total = private$job_history_$get_job_count()-1, #We hide the initial task, because it is meaningless
+        finished = private$job_history_$get_finished_job_count()-1,
+        queued = private$job_history_$get_queued_job_count()
+      ))
     },
 
     get_current_load=function(flag_total_load=FALSE) {
@@ -85,9 +94,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
 
       if(is.null(running_job)) {
         ans <- list(
-          memkb=current_load$memkb,
-          peak_memkb=current_load$peakmemkb,
-          freememkb=current_load$freememkb)
+          mem_kb=current_load$mem_kb,
+          peak_mem_kb=current_load$peak_mem_kb,
+          free_mem_kb=current_load$free_mem_kb)
       } else {
         last_stats <- running_job$get_job_stats_before()
         ans<-compute_load_between(load_before = last_stats, load_after = current_load)
@@ -103,6 +112,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
       last_job_nr <- private$job_history_$get_running_job_nr()
       if(is.na(last_job_nr)) {
         last_job_nr <- private$job_history_$get_last_finished_job_nr()
+        if(last_job_nr==1) {
+          return(NULL)
+        }
       }
       last_job <- private$job_history_$get_job_by_nr(last_job_nr)
 
@@ -128,8 +140,14 @@ RemoteServer<-R6::R6Class("RemoteServer",
           ans<-c(ans, list(private$job_history_$get_job_by_nr(jobnrs)))
         }
       }
-
-      return(ans)
+      jobs<-lapply(seq(1, length(jobnrs)),
+             function(i) RemoteJob$new(job_entry=ans[[i]], remote_server=self,
+                                       job_history=private$job_history_, job_nr=jobnrs[[i]]))
+      if(length(jobnrs)==1) {
+        return(jobs[[1]])
+      } else {
+        return(jobs)
+      }
     },
 
     .get_aux_connection=function() {private$cl_aux_connection_},
@@ -137,10 +155,13 @@ RemoteServer<-R6::R6Class("RemoteServer",
     .get_jobs=function(job_name=NULL) { private$job_history_},
 
     get_job_return_value=function(jobname, flag_remove_value=TRUE) {
+      if(jobname=='') {
+        stop("Jobname must be non-zero string")
+      }
       job_nrs<-private$job_history_$get_jobnr_by_name(jobname)
 
       if(length(job_nrs)==0) {
-        return(NULL)
+        stop(paste0("Cannot find a job with name ", jobname))
       }
       if(length(job_nrs)==1) {
         job<-private$job_history_$get_job_by_nr(job_nrs)
@@ -167,21 +188,22 @@ RemoteServer<-R6::R6Class("RemoteServer",
 
     execute_job=function(jobname, expression, flag_wait=FALSE, timeout=0, flag_clear_memory=TRUE) {
       expr<-substitute(expression)
+      command<-deparse(expr)
       ans<-eval(substitute(
         private$job_history_$run_task(jobname, {
           stats<-get_current_load(cl, remote_tmp_dir, pid)
-          start_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem=stats$memkb)
+          start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
           ans<-parallel::clusterEvalQ(cl = cl, expression)
 
           stats<-get_current_load(cl, remote_tmp_dir, pid)
-          end_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem=stats$memkb,
-                          freememkb=stats$freememkb
+          end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
+                          free_mem_kb=stats$free_mem_kb
                           )
           return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
-        }),
+        }, command=command),
         list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
-             expression=expr)))
+             expression=expr, command=command)))
       job<-ans$job
       job_nr<-ans$jobnr
 
@@ -269,7 +291,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
         ans<-list(
           cpu_cores =capabilities$cores,
           cpu_speed =capabilities$speed,
-          mem_size =capabilities$memkb * 1024,
+          mem_size =capabilities$mem_kb * 1024,
           net_send_speed =capabilities$net_send_speed,
           net_receive_speed =capabilities$net_receive_speed,
           host_name =capabilities$host_name
@@ -311,9 +333,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
       ans<-get_current_load(cl=cl, script_dir = private$remote_tmp_dir_, pid = private$cl_pid_)
       return(list(wall_time=ans$wall_time,
                   cpu_time=ans$cpu_time,
-                  mem=ans$memkb,
-                  peak_mem=ans$peakmemkb,
-                  freememkb=ans$freememkb
+                  mem_kb=ans$mem_kb,
+                  peak_mem_kb=ans$peak_mem_kb,
+                  free_mem_kb=ans$free_mem_kb
       ))
       if(flag_reset_peak_mem) {
         file<-file.path(private$remote_tmp_dir_, 'reset_peak_mem.sh')

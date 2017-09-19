@@ -111,7 +111,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
     },
 
     print=function(flag_include_command=FALSE) {
-      browser()
+#      browser()
       stats<-self$get_current_statistics()
       rap <- paste0('Task ', stats$name,
                     if(flag_include_command) {
@@ -126,23 +126,23 @@ RemoteJob<-R6::R6Class("RemoteJob",
       } else if (stats$state=='running') {
         rap <- paste0(rap,
                       "Average CPU utilization: ", stats$cpuload, "%\n",
-                      "CPU time on task: ", lubridate::as.duration(stats$cputime), "\n",
-                      "Wall time on task: ", lubridate::as.duration(stats$wall_time), "\n",
+                      "CPU time on task: ", lubridate::as.duration(round(stats$cpu_time,2)), "\n",
+                      "Wall time on task: ", lubridate::as.duration(round(stats$wall_time,2)), "\n",
                       "Task current memory usage (delta): ",
-                      utils:::format.object_size(stats$memkb*1024, "auto"), " (",
-                      utils:::format.object_size(stats$memkb_delta*1024, "auto"), ")\n",
+                      utils:::format.object_size(stats$mem_kb*1024, "auto"), " (",
+                      utils:::format.object_size(stats$mem_kb_delta*1024, "auto"), ")\n",
                       "Task peak memory usage (delta): ",
-                      utils:::format.object_size(stats$peak_memkb*1024, "auto"), " (",
-                      utils:::format.object_size(stats$peak_memkb_delta*1024, "auto"),")\n"
+                      utils:::format.object_size(stats$peak_mem_kb*1024, "auto"), " (",
+                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n"
         )
       } else if (stats$state =='finished') {
         rap <- paste0(rap,
                       "Average CPU utilization: ", stats$cpuload, "%\n",
-                      "CPU time on task: ", lubridate::as.duration(stats$cputime), "\n",
-                      "Wall time on task: ", lubridate::as.duration(stats$wall_time), "\n",
+                      "CPU time on task: ", lubridate::as.duration(round(stats$cpu_time,2)), "\n",
+                      "Wall time on task: ", lubridate::as.duration(round(stats$wall_time,2)), "\n",
                       "Task peak memory usage (delta): ",
-                      utils:::format.object_size(stats$peak_memkb*1024, "auto"), " (",
-                      utils:::format.object_size(stats$peak_memkb_delta*1024, "auto"),")\n"
+                      utils:::format.object_size(stats$peak_mem_kb*1024, "auto"), " (",
+                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n"
         )
       }
       cat(rap)

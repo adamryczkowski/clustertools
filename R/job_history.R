@@ -1,7 +1,7 @@
 JobHistory<-R6::R6Class("JobHistory",
   public = list(
     initialize=function(stats_function) {
-      browser()
+#      browser()
 
       private$get_stats_function_ <- stats_function
       private$jobs_=list()
@@ -11,11 +11,11 @@ JobHistory<-R6::R6Class("JobHistory",
 
     #expression requires something that evaluates to list of 3 elements:
     #start_stats, ans, end_stats
-    run_task=function(jobname, expression) {
+    run_task=function(jobname, expression, command) {
       #First it gathers current statistics
       expr <- substitute(expression)
 
-      job <- private$create_job(jobname, command = deparse(expr))
+      job <- private$create_job(jobname, command = command)
 
       job$job$run_task(expr)
       return(list(job=job, jobnr=length(private$jobs_)))
@@ -102,7 +102,17 @@ JobHistory<-R6::R6Class("JobHistory",
 
     get_job_count=function() {
       return(length(private$jobs_))
+    },
+
+    get_finished_job_count=function() {
+      return(private$last_finished_job_)
+    },
+
+    get_queued_job_count=function() {
+      return(length(private$jobs_) - private$last_finished_job_ - self$is_job_running())
     }
+
+
 
   ),
 
@@ -140,7 +150,7 @@ JobHistory<-R6::R6Class("JobHistory",
 JobEntry<-R6::R6Class("JobEntry",
   public = list(
     initialize=function(jobname, stats_before, command=NULL, flag_init_job=FALSE) {
-      browser()
+#      browser()
       if(!flag_init_job) {
         private$job_ <- BackgroundTask$new()
       } else {
@@ -161,7 +171,7 @@ JobEntry<-R6::R6Class("JobEntry",
         } else {
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
           if(!is.null(ans)) {
-            browser()
+#            browser()
             private$stats_before2_ <- ans$start_stats
             private$stats_after_ <- ans$end_stats
             if(length(ans$ans)==1){
@@ -184,10 +194,11 @@ JobEntry<-R6::R6Class("JobEntry",
       if(!self$is_task_finished()) {
         return(simpleError("Task is still running"))
       }
-      return(private$ans_)
+      ans<-private$ans_
       if(flag_clear_memory){
         private$ans_<-simpleError("Return value was cleared")
       }
+      return(ans)
     },
 
     get_job_stats_after=function() {

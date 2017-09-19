@@ -127,12 +127,12 @@ execute_remote<-function(cl, expr) {
 
   job$run_task({
     stats<-get_current_load(private$cl_connection, private$remote_tmp_dir_, private$cl_id_)
-    start_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
+    start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
 
     ans<-parallel::clusterEvalQ(cl = private$cl_connection, expression)
 
     stats<-get_current_load(private$cl_connection, private$remote_tmp_dir_, private$cl_id_)
-    end_stats<-list(peak_mem=stats$peakmemkb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
+    end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time)
     return(list(start_stats=start_stats, ans=ans, end_stats=end_stats))
   }
   )
