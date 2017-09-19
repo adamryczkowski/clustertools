@@ -48,7 +48,7 @@ send_big_objects<-function(cl, objects, compress=NULL) {
     stop("objects must be a named list of objects to upload")
   }
 
-  if(compress!='') {
+  if(compress!='raw') {
     e<-new.env()
     raw<-memCompress(serialize(objects, connection=NULL), type=compress)
     assign('raw', raw, envir=e)
@@ -64,7 +64,7 @@ send_big_objects<-function(cl, objects, compress=NULL) {
       1}), list(compress=compress)))
     return(1)
   } else {
-    parallel::clusterExport(cl, names(objects), envir = objects)
+    parallel::clusterExport(cl, names(objects), envir = as.environment(objects))
     return(1)
   }
 }
@@ -91,6 +91,7 @@ send_big_object<-function(cl, object, remote_name, compress=NULL) {
     parallel::clusterExport(cl, remote_name, envir = e)
   }
 }
+
 receive_big_object<-function(cl, object_name, compress=NULL) {
   if(is.null(compress)) {
     obj<-tryCatch(
@@ -118,6 +119,47 @@ receive_big_object<-function(cl, object_name, compress=NULL) {
     obj<-eval(substitute(parallel::clusterEvalQ(cl, object_name), list(object_name=parse(text=object_name))))
   }
   return(obj)
+}
+
+receive_big_objects<-function(cl, object_names, compress=NULL) {
+  if(is.null(compress)) {
+    obj<-tryCatch(
+      unlist(eval(substitute(parallel::clusterEvalQ(cl, sum(as.numeric(lapply(object_names,
+                                                           function(object_name) object.size(eval(parse(text=object_name))))))),
+                      list(object_names=object_names)))),
+
+      error=function(e)e
+    )
+    if('error' %in% class(obj))
+    {
+      stop(paste0("Getting the remote object returned an error: ", obj$message))
+    }
+    if(as.numeric(obj) < 100000) {
+      compress<-'raw'
+    }else {
+      compress<-'bzip2'
+    }
+  }
+
+  if(compress!='raw') {
+    ans<-eval(substitute(parallel::clusterEvalQ(cl, {
+        e<-new.env()
+        for(object_name in object_names) {
+          e$object_name <- eval(parse(text=object_name))
+        }
+        memCompress(serialize(e, connection=NULL), type=compress)
+      }), list(object_names=object_names, compress=compress)))
+    objs<-unserialize(memDecompress(from = ans[[1]], type=compress))
+  } else {
+    objs<-eval(substitute(parallel::clusterEvalQ(cl, {
+        e<-new.env()
+        for(object_name in object_names) {
+          assign(object_name, eval(parse(text=object_name)), envir=e)
+        }
+        e
+      }), list(object_names=object_names)))
+  }
+  return(objs)
 }
 
 execute_remote<-function(cl, expr) {

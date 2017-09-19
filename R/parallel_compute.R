@@ -230,11 +230,10 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
 
-    send_objects=function(named_list_of_objects, flag_wait=FALSE, job_name=NULL) {
+    send_objects=function(named_list_of_objects, flag_wait=FALSE, job_name=NULL, timeout=0) {
       if(!'list' %in% class(named_list_of_objects)) {
         stop("named_list_of_objects must be a named list of objects to upload")
       }
-      browser()
       ans<-eval(substitute(
         private$job_history_$run_task(job_name, {
           stats<-get_current_load(cl, remote_tmp_dir, pid)
@@ -271,10 +270,54 @@ RemoteServer<-R6::R6Class("RemoteServer",
                                 job_history=private$job_history_, job_nr=job_nr)
         return(jobobj)
       } else {
-        ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        ans <- job$get_return_value(flag_clear_memory=FALSE)
         return(ans)
       }
     },
+
+  receive_objects=function(object_names, flag_wait=FALSE, job_name=NULL, compress='auto', timeout=0) {
+    if(compress=='auto') {
+      compress<-NULL
+    }
+    if(!'character' %in% class(object_names)) {
+      stop("object_names must be a vector of names of variables to download")
+    }
+    ans<-eval(substitute(
+      private$job_history_$run_task(job_name, {
+        stats<-get_current_load(cl, remote_tmp_dir, pid)
+        start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
+
+        ans<-tryCatch({
+          receive_big_objects(cl, object_names = object_names, compress=compress)
+        }, error=function(e) e)
+
+        stats<-get_current_load(cl, remote_tmp_dir, pid)
+        end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
+                        free_mem_kb=stats$free_mem_kb
+        )
+        return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+      }, command=''),
+      list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+           object_names=object_names, compress=compress)))
+    job<-ans$job
+    job_nr<-ans$jobnr
+
+    if(flag_wait) {
+      flag_is_running<-!(job$wait_until_finished(timeout=timeout))
+    } else {
+      flag_is_running<-TRUE
+    }
+
+    if(flag_is_running) {
+      jobobj <- RemoteJob$new(job_entry=job, remote_server=self,
+                              job_history=private$job_history_, job_nr=job_nr)
+      return(jobobj)
+    } else {
+      ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+      return(ans)
+    }
+},
+
 
     send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE, job_name=NULL) {
       if(!flag_wait) {

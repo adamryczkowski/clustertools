@@ -170,6 +170,7 @@ JobEntry<-R6::R6Class("JobEntry",
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
           if(!is.null(ans)) {
             if(!'try-error' %in% class(ans)) {
+              browser()
               private$stats_before2_ <- ans$start_stats
               private$stats_after_ <- ans$end_stats
               if(length(ans$ans)==1){

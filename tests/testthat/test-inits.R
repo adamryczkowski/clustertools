@@ -71,13 +71,39 @@ test_that("Executing a job that makes an error", {
 test_that("Copying object to remote", {
   options(warn=2)
   srv_loc<-RemoteServer$new('localhost')
-  browser()
   a<-srv_loc$send_objects(named_list_of_objects = list(a=1:10))
+  expect_equal(a$peek_return_value(flag_wait_until_finished = TRUE), "1 object sent.")
   a2<-srv_loc$execute_job('get_a', a, flag_wait = TRUE, flag_clear_memory = FALSE)
+  expect_equivalent(a2, 1:10)
 
-  srv_loc$spawn_job(named_list_of_objects = list(a=1:10))
-  debugonce(RemoteServer$new)
+  a<-srv_loc$send_objects(named_list_of_objects = list(a=3:5, b="string"))
+  expect_equal(a$peek_return_value(flag_wait_until_finished = TRUE), "2 objects sent.")
 
+  a2<-srv_loc$execute_job('get_a', a, flag_wait = TRUE, flag_clear_memory = FALSE)
+  expect_equivalent(a2, 3:5)
+  a2<-srv_loc$execute_job('get_b', b, flag_wait = TRUE, flag_clear_memory = FALSE)
+  expect_equivalent(a2, "string")
+
+})
+
+test_that("Receiving object from remote", {
+  #todo
+  options(warn=2)
+  srv_loc<-RemoteServer$new('localhost')
+  a<-srv_loc$send_objects(job_name = "send", named_list_of_objects = list(a=10:14, b="second string"), flag_wait = TRUE)
+  debugonce(srv_loc$receive_objects)
+  a<-srv_loc$receive_objects(object_names = "a" , job_name = "receive")
+  ans<-a$peek_return_value()
+  expect_equal(class(ans), 'environment')
+  expect_equal(length(ans), 1)
+  expect_equivalent(ans$a, 10:14)
+
+  a<-srv_loc$receive_objects(object_names = c("a","b") , job_name = "receive")
+  ans<-a$peek_return_value()
+  expect_equal(class(ans), 'environment')
+  expect_equal(length(ans), 2)
+  expect_equivalent(ans$a, 10:14)
+  expect_equivalent(ans$b, "second string")
 })
 #Przy uruchomieniu serwera zostaje utworzony prywatny katalog /tmp/<random> na serwerze.
 #W nim są umieszczane skrypty z katalogu 'scripts' w ścieżce pakietu.
