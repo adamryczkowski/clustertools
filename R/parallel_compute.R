@@ -31,8 +31,11 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     finalize=function() {
-      parallel::stopCluster(private$cl_connection_)
-      parallel::stopCluster(private$cl_aux_connection_)
+      tryCatch(parallel::stopCluster(private$cl_connection_),
+               error=function(e)e)
+      tryCatch(parallel::stopCluster(private$cl_aux_connection_),
+               error=function(e)e)
+
     },
 
     print=function() {
@@ -127,8 +130,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
       return(private$job_history_$is_job_running())
     },
 
-    get_job_by_name=function(jobname) {
-      jobnrs<-private$job_history_$get_jobnr_by_name(jobname)
+    get_job_by_name=function(job_name) {
+      jobnrs<-private$job_history_$get_jobnr_by_name(job_name)
       if(length(jobnrs)==0) {
         return(list())
       }
@@ -136,8 +139,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
         ans<-list(private$job_history_$get_job_by_nr(jobnrs))
       } else {
         ans<-list()
-        for(i in seq(1,  length(jobnrs))){
-          ans<-c(ans, list(private$job_history_$get_job_by_nr(jobnrs)))
+        for(i in jobnrs){
+          ans<-c(ans, list(private$job_history_$get_job_by_nr(i)))
         }
       }
       jobs<-lapply(seq(1, length(jobnrs)),
@@ -154,14 +157,14 @@ RemoteServer<-R6::R6Class("RemoteServer",
     .get_pid=function() {private$cl_pid_},
     .get_jobs=function(job_name=NULL) { private$job_history_},
 
-    get_job_return_value=function(jobname, flag_remove_value=TRUE) {
-      if(jobname=='') {
-        stop("Jobname must be non-zero string")
+    get_job_return_value=function(job_name, flag_remove_value=TRUE) {
+      if(job_name=='') {
+        stop("job_name must be non-zero string")
       }
-      job_nrs<-private$job_history_$get_jobnr_by_name(jobname)
+      job_nrs<-private$job_history_$get_jobnr_by_name(job_name)
 
       if(length(job_nrs)==0) {
-        stop(paste0("Cannot find a job with name ", jobname))
+        stop(paste0("Cannot find a job with name ", job_name))
       }
       if(length(job_nrs)==1) {
         job<-private$job_history_$get_job_by_nr(job_nrs)
@@ -186,11 +189,11 @@ RemoteServer<-R6::R6Class("RemoteServer",
       return(retvalue)
     },
 
-    execute_job=function(jobname, expression, flag_wait=FALSE, timeout=0, flag_clear_memory=TRUE) {
+    execute_job=function(job_name, expression, flag_wait=FALSE, timeout=0, flag_clear_memory=TRUE) {
       expr<-substitute(expression)
       command<-deparse(expr)
       ans<-eval(substitute(
-        private$job_history_$run_task(jobname, {
+        private$job_history_$run_task(job_name, {
           stats<-get_current_load(cl, remote_tmp_dir, pid)
           start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
@@ -202,7 +205,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
           end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                           free_mem_kb=stats$free_mem_kb
                           )
-          return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+          list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
         }, command=command),
         list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
              expression=expr, command=command)))
@@ -252,7 +255,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
           end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                           free_mem_kb=stats$free_mem_kb
           )
-          return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+          list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
         }, command=''),
         list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
              named_list_of_objects=named_list_of_objects)))
@@ -275,7 +278,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
 
-  receive_objects=function(object_names, flag_wait=FALSE, job_name=NULL, compress='auto', timeout=0) {
+  receive_objects=function(object_names, flag_wait=FALSE, job_name=NULL, compress='auto', timeout=0, flag_clear_memory=TRUE) {
     if(compress=='auto') {
       compress<-NULL
     }
@@ -295,7 +298,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
         end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                         free_mem_kb=stats$free_mem_kb
         )
-        return(list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid))
+        list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
       }, command=''),
       list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
            object_names=object_names, compress=compress)))

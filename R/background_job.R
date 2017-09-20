@@ -50,12 +50,13 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
          ans<-parallel::mccollect(private$job_, wait=TRUE)
        }
 #       browser()
+       if(is.null(ans)) {
+         return(FALSE)
+       }
        private$ans_<-ans[[as.character(self$task_id)]]
        private$job_<-NA
-       return(!is.na(ans))
-     } else {
-       return(TRUE)
      }
+     return(TRUE)
    }
  ),
  active = list(

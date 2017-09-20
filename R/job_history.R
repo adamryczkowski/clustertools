@@ -11,11 +11,11 @@ JobHistory<-R6::R6Class("JobHistory",
 
     #expression requires something that evaluates to list of 3 elements:
     #start_stats, ans, end_stats
-    run_task=function(jobname, expression, command) {
+    run_task=function(job_name, expression, command) {
       #First it gathers current statistics
       expr <- substitute(expression)
 
-      job <- private$create_job(jobname, command = command)
+      job <- private$create_job(job_name, command = command)
 
       job$job$run_task(expr)
       return(list(job=job, jobnr=length(private$jobs_)))
@@ -70,16 +70,16 @@ JobHistory<-R6::R6Class("JobHistory",
       return(job)
     },
 
-    get_jobnr_by_name=function(jobname) {
-      pos <- which(names(private$jobs_) %in% jobname)
+    get_jobnr_by_name=function(job_name) {
+      pos <- which(names(private$jobs_) %in% job_name)
       if(length(pos)==0) {
         return(numeric())
       }
       return(pos)
     },
 
-    get_job_by_name=function(jobname) {
-      pos <- which(names(private$jobs_) %in% jobname)
+    get_job_by_name=function(job_name) {
+      pos <- which(names(private$jobs_) %in% job_name)
       if(length(pos)==0) {
         return(NULL)
       }
@@ -125,13 +125,13 @@ JobHistory<-R6::R6Class("JobHistory",
       }
     },
 
-    create_job=function(jobname, command, flag_init_job=FALSE) {
+    create_job=function(job_name, command, flag_init_job=FALSE) {
       stats<-private$get_stats_before_enqueue()
-      newjob <- JobEntry$new(jobname=jobname,
+      newjob <- JobEntry$new(job_name=job_name,
                              stats_before=stats,
                              command = command,
                              flag_init_job=flag_init_job)
-      private$jobs_<-c(private$jobs_, setNames(list(newjob), jobname))
+      private$jobs_<-c(private$jobs_, setNames(list(newjob), job_name))
       return(newjob)
     },
 
@@ -147,7 +147,7 @@ JobHistory<-R6::R6Class("JobHistory",
 
 JobEntry<-R6::R6Class("JobEntry",
   public = list(
-    initialize=function(jobname, stats_before, command=NULL, flag_init_job=FALSE) {
+    initialize=function(job_name, stats_before, command=NULL, flag_init_job=FALSE) {
 #      browser()
       if(!flag_init_job) {
         private$job_ <- BackgroundTask$new()
@@ -155,7 +155,7 @@ JobEntry<-R6::R6Class("JobEntry",
         private$stats_after_ <- stats_before
       }
       private$ans_<-simpleError("This job was never run")
-      private$jobname_ <- jobname
+      private$job_name_ <- job_name
       if(!is.null(command)) {
         private$command_ <- command
       }
@@ -170,7 +170,6 @@ JobEntry<-R6::R6Class("JobEntry",
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
           if(!is.null(ans)) {
             if(!'try-error' %in% class(ans)) {
-              browser()
               private$stats_before2_ <- ans$start_stats
               private$stats_after_ <- ans$end_stats
               if(length(ans$ans)==1){
@@ -246,14 +245,14 @@ JobEntry<-R6::R6Class("JobEntry",
         private$command_ <- newcommand
       }
     },
-    name = function() private$jobname_,
+    name = function() private$job_name_,
     job = function() return(private$job_)
   ),
 
   private = list(
     job_=NA,
     ans_=NA,
-    jobname_=NA,
+    job_name_=NA,
     command_=NA,
     tag_=NA,
     stats_before_=NA,
