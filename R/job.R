@@ -152,6 +152,9 @@ RemoteJob<-R6::R6Class("RemoteJob",
         )
       }
       cat(rap)
+    },
+    get_parallelJob=function() {
+      return(private$job_entry_$job$job)
     }
   ),
   active = list(

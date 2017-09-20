@@ -154,6 +154,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     .get_aux_connection=function() {private$cl_aux_connection_},
+    .get_main_connection=function() {private$cl_connection_},
     .get_pid=function() {private$cl_pid_},
     .get_jobs=function(job_name=NULL) { private$job_history_},
 
@@ -194,20 +195,20 @@ RemoteServer<-R6::R6Class("RemoteServer",
       command<-deparse(expr)
       ans<-eval(substitute(
         private$job_history_$run_task(job_name, {
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          stats<-get_current_load(cl2, remote_tmp_dir, pid)
           start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
           ans<-tryCatch({
             parallel::clusterEvalQ(cl = cl, expression)
           }, error=function(e) e)
 
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          stats<-get_current_load(cl2, remote_tmp_dir, pid)
           end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                           free_mem_kb=stats$free_mem_kb
                           )
           list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
         }, command=command),
-        list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+        list(cl=private$cl_connection_, cl2=private$cl_aux_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
              expression=expr, command=command)))
       job<-ans$job
       job_nr<-ans$jobnr
@@ -233,17 +234,20 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
 
-    send_objects=function(named_list_of_objects, flag_wait=FALSE, job_name=NULL, timeout=0) {
+    send_objects=function(named_list_of_objects, flag_wait=FALSE, job_name=NULL, timeout=0, compress='auto') {
       if(!'list' %in% class(named_list_of_objects)) {
         stop("named_list_of_objects must be a named list of objects to upload")
       }
+      if(compress=='auto') {
+        compress<-NULL
+      }
       ans<-eval(substitute(
         private$job_history_$run_task(job_name, {
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          stats<-get_current_load(cl2, remote_tmp_dir, pid)
           start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
           ans<-tryCatch({
-            send_big_objects(cl, objects = named_list_of_objects)
+            send_big_objects(cl, objects = named_list_of_objects, compress = compress)
             paste0(if(length(named_list_of_objects)==1) {
               "1 object sent."
             } else {
@@ -251,14 +255,14 @@ RemoteServer<-R6::R6Class("RemoteServer",
             })
           }, error=function(e) e)
 
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          stats<-get_current_load(cl2, remote_tmp_dir, pid)
           end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                           free_mem_kb=stats$free_mem_kb
           )
           list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
         }, command=''),
-        list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
-             named_list_of_objects=named_list_of_objects)))
+        list(cl=private$cl_connection_, cl2=private$cl_aux_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+             named_list_of_objects=named_list_of_objects, compress=compress)))
       job<-ans$job
       job_nr<-ans$jobnr
 
@@ -287,20 +291,20 @@ RemoteServer<-R6::R6Class("RemoteServer",
     }
     ans<-eval(substitute(
       private$job_history_$run_task(job_name, {
-        stats<-get_current_load(cl, remote_tmp_dir, pid)
+        stats<-get_current_load(cl2, remote_tmp_dir, pid)
         start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
         ans<-tryCatch({
           receive_big_objects(cl, object_names = object_names, compress=compress)
         }, error=function(e) e)
 
-        stats<-get_current_load(cl, remote_tmp_dir, pid)
+        stats<-get_current_load(cl2, remote_tmp_dir, pid)
         end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
                         free_mem_kb=stats$free_mem_kb
         )
         list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
       }, command=''),
-      list(cl=private$cl_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+      list(cl=private$cl_connection_, cl2=private$cl_aux_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
            object_names=object_names, compress=compress)))
     job<-ans$job
     job_nr<-ans$jobnr

@@ -85,14 +85,3 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
  )
 
 )
-
-# b1<-BackgroundTask$new()
-# b1$is_task_running()
-# #
-# b1$run_task({Sys.sleep(10);2})
-# b1$is_task_running()
-# a<-b1$job
-# b1$task_return_value
-# b1$job
-# b1$task_return_value
-# b1$get_task_return_value()
