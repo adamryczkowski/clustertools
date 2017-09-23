@@ -6,6 +6,7 @@ library(testthat)
 context("Executing a simple job remotely")
 
 test_that("Executing a simple job remotely", {
+  gc()
   options(warn=2)
   srv_loc<-RemoteServer$new('localhost')
   remote_pid<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
@@ -38,12 +39,12 @@ test_that("Executing a simple job remotely", {
   expect_equal(remote_pid, a$pop_return_value())
   expect_error(a$peek_return_value())
   srv_loc$finalize()
-  gc()
 })
 
 context('Job that causes error')
 
 test_that("Executing a job that makes an error", {
+  gc()
   b<-BackgroundTask$new()
   b$run_task(expr = list()-1)
   a<-b$get_task_return_value()
@@ -59,7 +60,24 @@ test_that("Executing a job that makes an error", {
   expect_true("list" %in% class(astat))
   expect_equal(srv_loc$get_count_statistics()$finished, 1)
   srv_loc$finalize()
-  gc()
 })
 
 
+test_that("Setting and removing servers quickly", {
+  gc()
+  srv_loc<-RemoteServer$new('localhost')
+  remote_pid1<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  stats<- srv_loc$get_current_load()
+
+  srv_loc<-RemoteServer$new('localhost')
+  remote_pid2<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  stats<- srv_loc$get_current_load()
+  expect_false(remote_pid1 == remote_pid2)
+
+  srv_loc<-RemoteServer$new('localhost')
+  remote_pid3<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  stats<- srv_loc$get_current_load()
+  expect_false(remote_pid1 == remote_pid3)
+
+  srv_loc$finalize()
+})

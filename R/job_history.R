@@ -173,7 +173,11 @@ JobEntry<-R6::R6Class("JobEntry",
               private$stats_before2_ <- ans$start_stats
               private$stats_after_ <- ans$end_stats
               if(length(ans$ans)==1){
-                private$ans_ <- ans$ans[[1]]
+                if(is.environment(ans$ans)) {
+                  private$ans_ <- ans$ans[[names(ans$ans)]]
+                } else {
+                  private$ans_ <- ans$ans[[1]]
+                }
               } else {
                 private$ans_ <- ans$ans
               }

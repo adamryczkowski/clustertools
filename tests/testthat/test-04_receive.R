@@ -7,6 +7,7 @@ library(testthat)
 context('Receiving from remote')
 
 test_that("Receiving object from remote", {
+  gc()
   #todo
   options(warn=2)
   srv_loc<-RemoteServer$new('localhost')
@@ -25,6 +26,5 @@ test_that("Receiving object from remote", {
   expect_equivalent(ans$a, 10:14)
   expect_equivalent(ans$b, "second string")
   srv_loc$finalize()
-  gc()
 })
 

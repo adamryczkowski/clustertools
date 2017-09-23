@@ -18,6 +18,6 @@ test_that("Scheduling two tasks with the same name", {
   expect_equal(length(a),2)
   expect_equal(a[[1]]$peek_return_value(), 2+2)
   expect_equal(a[[2]]$peek_return_value(), 3+3)
-  gc()
+  srv_loc$finalize()
 })
 

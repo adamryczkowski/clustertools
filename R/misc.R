@@ -3,11 +3,16 @@ find_default_if<-function(){
 }
 
 get_cpu_capabilies<-function(cl) {
-  capabilities<-parallel::clusterEvalQ(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
+  capabilities<-MyClusterEval(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
                                                 cores=system('grep "^core id" /proc/cpuinfo | sort -u | wc -l', intern=TRUE),
                                                 speed=1/system.time(system('dd if=/dev/zero bs=3 count=1000000 2>/dev/null  | md5sum  >/dev/null'))[[3]],
                                                 host_name=system('hostname', intern = TRUE)
   ))
+  # capabilities<-parallel::clusterEvalQ(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
+  #                                               cores=system('grep "^core id" /proc/cpuinfo | sort -u | wc -l', intern=TRUE),
+  #                                               speed=1/system.time(system('dd if=/dev/zero bs=3 count=1000000 2>/dev/null  | md5sum  >/dev/null'))[[3]],
+  #                                               host_name=system('hostname', intern = TRUE)
+  # ))
   capabilities<-capabilities[[1]]
   capabilities$mem_kb<-as.numeric(capabilities$mem_kb)
   capabilities$cores<-as.numeric(capabilities$cores)
@@ -15,17 +20,36 @@ get_cpu_capabilies<-function(cl) {
   obj<-readBin('/dev/urandom', what=raw(), n=2*1000*1000)
   e<-new.env()
   assign('obj', obj, envir = e)
-  capabilities$net_send_speed<-1/(system.time(parallel::clusterExport(cl, 'obj', envir = e))[[3]]/2000)
-  capabilities$net_receive_speed<-1/(system.time(parallel::clusterEvalQ(cl, obj))[[3]]/2000)
+  capabilities$net_send_speed<-1/(system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]/2000)
+  capabilities$net_receive_speed<-1/(system.time(MyClusterEval(cl, obj))[[3]]/2000)
+  # capabilities$net_send_speed<-1/(system.time(parallel::clusterExport(cl, 'obj', envir = e))[[3]]/2000)
+  # capabilities$net_receive_speed<-1/(system.time(parallel::clusterEvalQ(cl, obj))[[3]]/2000)
 
   return(capabilities)
 }
 
 
 get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
+  file.ex<-eval(substitute(
+    MyClusterEval(cl, file.exists(file.path(script_dir, 'get_peak_mem.sh'))),
+#    parallel::clusterEvalQ(cl, file.exists(file.path(script_dir, 'get_peak_mem.sh'))),
+    list(script_dir=script_dir)))[[1]]
+  i<-1
+  if(!is.logical(file.ex)){
+    cat(paste0("file.ex: \n", str(file.ex)))
+  }
+
+  # while(!file.ex) {
+  #   file.ex<-eval(substitute(
+  #     parallel::clusterEvalQ(cl, file.exists(file.path(script_dir, 'get_peak_mem.sh'))),
+  #     list(script_dir=script_dir)))[[1]]
+  #   cat(paste0("Waiting for scripts, it=", i, '\n'))
+  #   i<-i+1
+  # }
   if(flag_include_top) {
     stats<-eval(substitute(
-      parallel::clusterEvalQ(cl, list(
+      MyClusterEval(cl, list(
+#      parallel::clusterEvalQ(cl, list(
         cpuload=as.numeric(system("LC_NUMERIC=\"en_GB.UTF-8\"; top -b -d 0.3 -n2 | grep \"Cpu(s)\" 2>/dev/null | awk '{print $2+$4}' | tail -n1", intern = TRUE)),
         free_mem_kb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
         mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
@@ -35,8 +59,60 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
       ))[[1]],
       list(script_dir=script_dir, pid=pid)))
   } else {
+    # free_mem_kb<-eval(substitute(
+    #   parallel::clusterEvalQ(cl,
+    #     as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)))[[1]],
+    #   list(script_dir=script_dir, pid=pid)))
+    # if(!is.numeric(free_mem_kb)) {
+    #   free_mem_kb<-eval(substitute(
+    #     parallel::clusterEvalQ(cl,
+    #                            as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)))[[1]],
+    #     list(script_dir=script_dir, pid=pid)))
+    # }
+    # if(!is.numeric(free_mem_kb)) browser()
+    #
+    # mem_kb<-eval(substitute(
+    #   parallel::clusterEvalQ(cl,
+    #     as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)))[[1]],
+    #   list(script_dir=script_dir, pid=pid)))
+    # if(!is.numeric(mem_kb)) browser()
+    #
+    # peak_mem_kb<-eval(substitute(
+    #   parallel::clusterEvalQ(cl,
+    #     as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)))[[1]],
+    #   list(script_dir=script_dir, pid=pid)))
+    # if(!is.numeric(peak_mem_kb)) browser()
+    #
+    # cpu_time<-eval(substitute(
+    #   parallel::clusterEvalQ(cl,
+    #     as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)))[[1]],
+    #   list(script_dir=script_dir, pid=pid)))
+    # if(!is.numeric(cpu_time)) browser()
+    #
+    # wall_time<-eval(substitute(
+    #   parallel::clusterEvalQ(cl,
+    #     as.numeric(Sys.time()))[[1]],
+    #   list(script_dir=script_dir, pid=pid)))
+    # if(!is.numeric(wall_time)) browser()
+    #
+    # for(i in 1:20) {
+    #   wall_time<-eval(substitute(
+    #     parallel::clusterEvalQ(cl,
+    #                            as.numeric(Sys.time()))[[1]],
+    #     list(script_dir=script_dir, pid=pid)))
+    #   if(!is.numeric(wall_time)) browser()
+    # }
+    #
+    # stats<-list(
+    #   free_mem_kb=free_mem_kb,
+    #   mem_kb=mem_kb,
+    #   peak_mem_kb=peak_mem_kb,
+    #   cpu_time=cpu_time,
+    #   wall_time=wall_time)
+
     stats<-eval(substitute(
-      parallel::clusterEvalQ(cl, list(
+      MyClusterEval(cl, list(
+#      parallel::clusterEvalQ(cl, list(
         free_mem_kb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
         mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
         peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
@@ -45,19 +121,24 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
       ))[[1]],
       list(script_dir=script_dir, pid=pid)))
   }
+  if(!'list' %in% class(stats)) {
+    stats <- get_current_load(cl, script_dir, pid, flag_include_top)
+  }
   return(stats)
 }
 
 benchmark_speed_compression<-function(cl, obj_size=1000) {
   #First we prepare a large typical object
-  eval(substitute(parallel::clusterEvalQ(cl,{df<-data.frame(a=runif(obj_size));1}), list(obj_size=obj_size)))
+  eval(substitute(MyClusterEval(cl,{df<-data.frame(a=runif(obj_size));1}), list(obj_size=obj_size)))
+#  eval(substitute(parallel::clusterEvalQ(cl,{df<-data.frame(a=runif(obj_size));1}), list(obj_size=obj_size)))
   speeds<-list()
   speeds$xz<-system.time(a<-receive_big_object(cl, 'df', 'xz'))[[3]]
   speeds$bzip2<-system.time(a<-receive_big_object(cl, 'df', 'bzip2'))[[3]]
   speeds$gzip<-system.time(a<-receive_big_object(cl, 'df', 'gzip'))[[3]]
   speeds$none<-system.time(a<-receive_big_object(cl, 'df', 'none'))[[3]]
   speeds$raw<-system.time(a<-receive_big_object(cl, 'df', ''))[[3]]
-  speeds$objsize<-parallel::clusterEvalQ(cl, object.size(df))
+  speeds$objsize<-MyClusterEval(cl, object.size(df))
+#  speeds$objsize<-parallel::clusterEvalQ(cl, object.size(df))
   cat('.')
   return(speeds)
 }

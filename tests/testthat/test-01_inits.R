@@ -5,6 +5,7 @@ library(testthat)
 context("Local cluster initialization")
 
 test_that("Server start and stop", {
+  gc()
   srv_loc<-RemoteServer$new('localhost')
   expect_equal(srv_loc$host_address, 'localhost')
   expect_equal(srv_loc$host_name, system('hostname', intern = TRUE))
@@ -16,7 +17,7 @@ test_that("Server start and stop", {
   expect_error(srv_loc$get_job_return_value('bla'))
   expect_false(srv_loc$is_busy())
   srv_loc$finalize()
-  gc()
 })
 
 #TODO: Zrób test na istnienie skryptów wykonywalnych w katalogu tmp
+

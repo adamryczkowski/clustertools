@@ -7,6 +7,7 @@ library(testthat)
 context('Sending to remote')
 
 test_that("Copying object to remote", {
+  gc()
   options(warn=2)
   srv_loc<-RemoteServer$new('localhost')
   a<-srv_loc$send_objects(named_list_of_objects = list(a=1:10))
@@ -23,6 +24,5 @@ test_that("Copying object to remote", {
   expect_equivalent(a2, "string")
 
   srv_loc$finalize()
-  gc()
 })
 

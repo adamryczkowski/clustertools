@@ -7,6 +7,8 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
      if(self$is_task_running()) {
        stop("Another background task is already running!")
      }
+     Sys.sleep(0.01)
+#     browser()
      private$job_ <- parallel::mcparallel(expr)
      if(flag_log_command){
        private$command_ <- deparse(expr)
