@@ -1,16 +1,18 @@
 
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
-    initialize=function(host_address, username=NULL,port=11001) {
-      #browser()
+    initialize=function(host_address, username=NULL,port=11001, network_interface=NULL) {
+#      browser()
       private$host_address_<-host_address
       private$mutex_next_ <- synchronicity::boost.mutex(synchronicity::uuid())
 
       if(is.null(username)) {
         username<-system('whoami', intern = TRUE)
       }
-      default_if<-find_default_if()
-      myip=system(paste0("ip addr show ", default_if, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
+      if(is.null(network_interface)) {
+        network_interface<-find_default_if()
+      }
+      myip=system(paste0("ip addr show ", network_interface, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
 
       private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
