@@ -1,6 +1,9 @@
 library(clustertools)
-srv1<-RemoteServer$new("192.168.8.145")
+srv1<-RemoteServer$new("10.55.181.46")
 srv2<-RemoteServer$new('localhost')
+srv3<-RemoteServer$new("10.55.181.43")
+srv1
+srv1$send_file(local_path = "/home/adam/youtube-dl.txt", remote_path = "/home/adam/youtube-dl.txt", flag_wait = TRUE, job_name = "job")
 
 srv1$get_pid()
 

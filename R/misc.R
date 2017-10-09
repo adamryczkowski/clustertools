@@ -1,11 +1,27 @@
-find_default_if<-function(){
-  return(system("/sbin/ip route | awk '/default/ { print $5 }'", intern=TRUE))
+find_default_if<-function(target_ip=NULL){
+  if(is.null(target_ip)) {
+    return(system("/sbin/ip route | awk '/default/ { print $5 }'", intern=TRUE))
+  } else {
+    ips<-iptools::hostname_to_ip(target_ip)[[1]]
+    routes<-stringr::str_split(system("/sbin/ip route", intern = TRUE), stringr::fixed(" "))
+    routes_tab<-sapply(routes, function(x) c(x[[1]], x[[2]]))
+    pos<-which(routes_tab[1,]=='default')
+    routes_tab<-t(sapply(routes[-pos], function(x) c(x[[1]], x[[3]])))
+    pos<-which(iptools::ip_in_range(rep(target_ip, nrow(routes_tab)), routes_tab[,1]))
+    return(routes_tab[pos,2])
+  }
 }
 
 get_cpu_capabilies<-function(cl) {
   capabilities<-MyClusterEval(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
                                                 cores=system('grep "^core id" /proc/cpuinfo | sort -u | wc -l', intern=TRUE),
                                                 speed=1/system.time(system('dd if=/dev/zero bs=3 count=1000000 2>/dev/null  | md5sum  >/dev/null'))[[3]],
+                                                speed2=
+                                      if(system2("which", args="sysbench", stdout=FALSE)==0) {
+                                        as.numeric(system('sysbench --test=cpu --cpu-max-prime=2000 run | grep "total time:" | grep -Eo "[[:digit:].]+"', intern = TRUE))
+                                      } else {
+                                        ""
+                                      },
                                                 host_name=system('hostname', intern = TRUE)
   ))
   # capabilities<-parallel::clusterEvalQ(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),

@@ -2,14 +2,14 @@
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(host_address, username=NULL,port=11001) {
-      #browser()
+#      browser()
       private$host_address_<-host_address
       private$mutex_next_ <- synchronicity::boost.mutex(synchronicity::uuid())
 
       if(is.null(username)) {
         username<-system('whoami', intern = TRUE)
       }
-      default_if<-find_default_if()
+      default_if<-find_default_if(host_address)
       myip=system(paste0("ip addr show ", default_if, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
 
@@ -45,6 +45,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       private$capabilities_<-list(
         cpu_cores =capabilities$cores,
         cpu_speed =capabilities$speed,
+        cpu_speed2 =capabilities$speed2,
         mem_size =capabilities$mem_kb * 1024,
         net_send_speed =capabilities$net_send_speed,
         net_receive_speed =capabilities$net_receive_speed,
@@ -75,7 +76,11 @@ RemoteServer<-R6::R6Class("RemoteServer",
       rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, " with ",
                   self$cpu_cores, " core CPU and ",
                   utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
-                  "CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n",
+                  if(self$cpu_speed2=='') {
+                    paste0("CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n")
+                  } else {
+                    paste0("CPU speed: ", gsub('.{1}$', '', utils:::format.object_size(2000/self$cpu_speed2, "auto")), " primes/second\n")
+                  },
                   "net_send_speed: ", utils:::format.object_size(self$net_send_speed*1000, "auto"), "/second\n",
                   "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n\n"
       )
@@ -439,6 +444,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
     host_name      = function() {private$fill_capabilities(TRUE); private$capabilities_$host_name},
     cpu_cores         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_cores},
     cpu_speed         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_speed},
+    cpu_speed2         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_speed2},
     mem_size          = function() {private$fill_capabilities(TRUE); private$capabilities_$mem_size},
     net_send_speed    = function() {private$fill_capabilities(TRUE); private$capabilities_$net_send_speed},
     net_receive_speed = function() {private$fill_capabilities(TRUE); private$capabilities_$net_receive_speed},

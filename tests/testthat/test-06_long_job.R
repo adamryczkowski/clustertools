@@ -29,6 +29,5 @@ test_that("Scheduling long job", {
   expect_gt(t[[3]], 1)
   expect_false(a$is_running())
   srv_loc$finalize()
-  gc()
 })
 

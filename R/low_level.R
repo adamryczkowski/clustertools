@@ -1,5 +1,5 @@
 MyClusterEval<-function(cl, expr){
-#  expr<-substitute(expr)
+  expr<-substitute(expr)
 #  str_expr<-deparse(expr, width.cutoff = 500)
 #  cat(paste0("Eval on ", as.integer(cl[[1]]$con), ": ", str_abbreviate(str_expr, 120),'\n'))
   eval(substitute(parallel::clusterEvalQ(cl, expr), list(expr=expr)))
