@@ -1,13 +1,13 @@
 MyClusterEval<-function(cl, expr){
-  expr<-substitute(expr)
+  expr=substitute(expr)
 #  str_expr<-deparse(expr, width.cutoff = 500)
 #  cat(paste0("Eval on ", as.integer(cl[[1]]$con), ": ", str_abbreviate(str_expr, 120),'\n'))
-  eval(substitute(parallel::clusterEvalQ(cl, expr), list(expr=expr)))
+  eval(substitute(parallel::clusterEvalQ(cl, expr), list(expr=expr, cl=cl)))
 }
 
 MyClusterExport<-function(cl, varlist, envir){
 #  cat(paste0("Export on ", as.integer(cl[[1]]$con), ", variables: ", str_abbreviate(paste(varlist, collapse = ' ') , 60)))
-  eval(substitute(parallel::clusterExport( cl, varlist, envir), list(varlist=varlist, envir=envir)))
+  eval(substitute(parallel::clusterExport( cl, varlist, envir), list(varlist=varlist, envir=envir, cl=cl)))
 
 }
 
