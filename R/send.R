@@ -1,4 +1,4 @@
-send_file<-function(cl, file_path, remote_path, flag_check_first=TRUE, flag_wait=TRUE) {
+send_file<-function(cl, file_path, remote_path, flag_check_first=TRUE) {
   if(!file.exists(file_path)) {
     stop(paste0("Cannot find ", file_path))
   }
@@ -29,10 +29,16 @@ send_file<-function(cl, file_path, remote_path, flag_check_first=TRUE, flag_wait
     }
     remote_path <- remote_path
     parallel::clusterExport(cl, varlist = 'remote_path', envir = environment())
-    parallel::clusterEvalQ(cl, {f<-file(remote_path, 'wb'); writeBin(a, f, useBytes = TRUE); close(f);rm(list=c('a', 'remote_path'));1})
-  }
-  if(flag_wait) {
-    private$job_$wait_for_task_finish()
+    parallel::clusterEvalQ(cl,
+    {
+      if(!dir.exists(dirname(remote_path))) {
+        dir.create(dirname(remote_path), recursive = TRUE)
+      }
+      f<-file(remote_path, 'wb')
+      writeBin(a, f, useBytes = TRUE)
+      close(f)
+      rm(list=c('a', 'remote_path'));1
+    })
   }
 }
 

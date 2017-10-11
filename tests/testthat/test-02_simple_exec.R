@@ -82,3 +82,4 @@ test_that("Setting and removing servers quickly", {
 
   srv_loc$finalize()
 })
+

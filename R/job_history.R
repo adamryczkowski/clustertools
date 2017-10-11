@@ -13,6 +13,7 @@ JobHistory<-R6::R6Class("JobHistory",
     #start_stats, ans, end_stats
     run_task=function(job_name, expression, command) {
       #First it gathers current statistics
+      #browser()
       expr <- substitute(expression)
 
       job <- private$create_job(job_name, command = command)
@@ -39,7 +40,7 @@ JobHistory<-R6::R6Class("JobHistory",
       if(is.na(jobnr)) {
         return(NULL)
       }
-      job<-private$jobs[[jobnr]]
+      job<-private$jobs_[[jobnr]]
       return(job)
     },
 
@@ -148,7 +149,6 @@ JobHistory<-R6::R6Class("JobHistory",
 JobEntry<-R6::R6Class("JobEntry",
   public = list(
     initialize=function(job_name, stats_before, command=NULL, flag_init_job=FALSE) {
-#      browser()
       if(!flag_init_job) {
         private$job_ <- BackgroundTask$new()
       } else {
@@ -157,7 +157,7 @@ JobEntry<-R6::R6Class("JobEntry",
       private$ans_<-simpleError("This job was never run")
       private$job_name_ <- job_name
       if(!is.null(command)) {
-        private$command_ <- command
+        private$command_ <- paste0(command, collapse ='\n' )
       }
       private$stats_before_ <- stats_before
     },
@@ -215,7 +215,7 @@ JobEntry<-R6::R6Class("JobEntry",
     },
 
     get_job_stats_before=function() {
-      if(class(private$stats_before_)=='JobEntry') {
+      if('JobEntry' %in% class(private$stats_before_)) {
         if(private$stats_before_$is_task_finished()) {
           private$stats_before_ <- private$stats_before_$get_job_stats_after()
         } else {

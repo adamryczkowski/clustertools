@@ -131,7 +131,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
         rap <- paste0(rap, "Number of tasks before: ", stats$queue_length)
       } else if (stats$state=='running') {
         rap <- paste0(rap,
-                      "Average CPU utilization: ", stats$cpuload, "%\n",
+                      "Average CPU utilization: ", round(stats$cpuload*100, 2), "%\n",
                       "CPU time on task: ", lubridate::as.duration(round(stats$cpu_time,2)), "\n",
                       "Wall time on task: ", lubridate::as.duration(round(stats$wall_time,2)), "\n",
                       "Task current memory usage (delta): ",
@@ -143,7 +143,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
         )
       } else if (stats$state =='finished') {
         rap <- paste0(rap,
-                      "Average CPU utilization: ", stats$cpuload, "%\n",
+                      "Average CPU utilization: ", round(stats$cpuload*100, 2), "%\n",
                       "CPU time on task: ", lubridate::as.duration(round(stats$cpu_time,2)), "\n",
                       "Wall time on task: ", lubridate::as.duration(round(stats$wall_time,2)), "\n",
                       "Task peak memory usage (delta): ",

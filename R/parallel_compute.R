@@ -90,21 +90,22 @@ RemoteServer<-R6::R6Class("RemoteServer",
       current_load <- self$get_current_load()
 
       if(!is.null(current_load$command)) {
-        rap<-paste0("\nCurrent task: ", current_load$command, "\n",
-                    "Average CPU utilization: ", current_load$cpuload, "%\n",
+        rap<-paste0("\nCurrent task: ", current_load$name, "\n",
+                    "Average CPU utilization: ", round(current_load$cpuload*100, 2), "%\n",
                     "CPU time on task: ", lubridate::as.duration(current_load$cpu_time), "\n",
                     "Task current memory usage (delta): ",
                     utils:::format.object_size(current_load$mem_kb*1024, "auto"), " (",
                     utils:::format.object_size(current_load$mem_kb_delta*1024, "auto"), ")\n",
                     "Task peak memory usage (delta): ",
                     utils:::format.object_size(current_load$peak_mem_kb*1024, "auto"), " (",
-                    utils:::format.object_size(current_load$peak_mem_kb_delta*1024, "auto"),")\n"
+                    utils:::format.object_size(current_load$peak_mem_kb_delta*1024, "auto"),")\n",
+                    "Code:\n", current_load$command, "\n"
                     )
         cat(rap)
       }
       total_load <- self$get_current_load(flag_total_load = TRUE)
       rap<-paste0("\nTotal runnning statistics: \n",
-                  "Average CPU utilization: ", total_load$cpuload, "%\n",
+                  "Average CPU utilization: ", round(total_load$cpuload*100, 2), "%\n",
                   "CPU time spent: ", lubridate::as.duration(total_load$cpu_time), "\n",
                   if(is.null(current_load$command)) {
                     paste0("Current memory usage: ", utils:::format.object_size(total_load$mem_kb*1024, "auto"), "\n")
@@ -127,6 +128,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     get_current_load=function(flag_total_load=FALSE) {
+#      browser()
       if(flag_total_load) {
         running_job<-private$job_history_$get_first_job()
       } else {
@@ -146,7 +148,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
           free_mem_kb=current_load$free_mem_kb)
       } else {
         last_stats <- running_job$get_job_stats_before()
-        ans<-compute_load_between(load_before = last_stats, load_after = current_load)
+        ans<-c(compute_load_between(load_before = last_stats, load_after = current_load),
+               command=running_job$command,
+               name=running_job$name)
       }
       return(ans)
     },
@@ -424,7 +428,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
 
-    send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE, job_name=NULL) {
+    send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE, timeout=0, job_name=NULL) {
       if(!'character' %in% class(local_path)) {
         stop("local_path must be a filename")
       }
@@ -477,7 +481,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
                                 job_history=private$job_history_, job_nr=job_nr)
         return(jobobj)
       } else {
-        ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        ans <- job$get_return_value(flag_clear_memory=TRUE)
         return(ans)
       }
       #
