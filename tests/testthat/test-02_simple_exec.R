@@ -8,7 +8,8 @@ context("Executing a simple job remotely")
 test_that("Executing a simple job remotely", {
   gc()
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new('localhost', port=11002)
+#  debugonce(srv_loc$execute_job)
   remote_pid<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
 
   expect_true(is.numeric(remote_pid))

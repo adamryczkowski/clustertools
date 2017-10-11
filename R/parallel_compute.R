@@ -2,7 +2,7 @@
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(host_address, username=NULL,port=11001, network_interface=NULL) {
-#      browser()
+      #browser()
       private$host_address_<-host_address
       private$mutex_next_ <- synchronicity::boost.mutex(synchronicity::uuid())
 
@@ -15,7 +15,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       myip=system(paste0("ip addr show ", network_interface, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
 
-      private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+      private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip[[1]], port=port, homogeneous=FALSE)
 
 
       private$remote_tmp_dir_<-copy_scripts_to_server(private$cl_connection_)
@@ -425,18 +425,78 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     send_file=function(local_path, remote_path, flag_wait=FALSE, flag_check_first=TRUE, job_name=NULL) {
-      if(!flag_wait) {
-        job<-self$create_job(job_name)
-
-        job$run_task(
-          send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
-                    flag_check_first=flag_check_first)
-        )
-        return(job)
-      } else {
-        send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
-                  flag_check_first=flag_check_first)
+      if(!'character' %in% class(local_path)) {
+        stop("local_path must be a filename")
       }
+      if(!'character' %in% class(remote_path)) {
+        stop("remote_path must be a filename")
+      }
+
+      m_entry_mutex <- synchronicity::boost.mutex(synchronicity::uuid()) #Mutex that synchronizes start of the thread.
+      #Thanks to him, there will be only one thread that is in the procss of spawning
+      synchronicity::lock(m_entry_mutex)
+      m_new_mutex <- synchronicity::boost.mutex(synchronicity::uuid())
+
+      ans<-eval(substitute(
+        private$job_history_$run_task(job_name, {
+          synchronicity::unlock(m_entry_mutex)
+          synchronicity::lock(m_previous)
+          synchronicity::lock(m_me)
+
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
+
+          ans<-tryCatch({
+            send_file(cl, file_path = local_path, remote_path = remote_path,
+                      flag_check_first=flag_check_first)
+          }, error=function(e) e)
+
+          stats<-get_current_load(cl, remote_tmp_dir, pid)
+          end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
+                          free_mem_kb=stats$free_mem_kb
+          )
+          synchronicity::unlock(m_me)
+          list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
+        }, command=''),
+        list(cl=private$cl_connection_, cl2=private$cl_aux_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
+             local_path=local_path, remote_path=remote_path,flag_check_first=flag_check_first,
+             m_entry_mutex=m_entry_mutex, m_previous=private$mutex_next_, m_me=m_new_mutex)))
+      synchronicity::lock(m_entry_mutex)
+      private$mutex_next_ <- m_new_mutex
+      job<-ans$job
+      job_nr<-ans$jobnr
+
+      if(flag_wait) {
+        flag_is_running<-!(job$wait_until_finished(timeout=timeout))
+      } else {
+        flag_is_running<-TRUE
+      }
+
+      if(flag_is_running) {
+        jobobj <- RemoteJob$new(job_entry=job, remote_server=self,
+                                job_history=private$job_history_, job_nr=job_nr)
+        return(jobobj)
+      } else {
+        ans <- job$get_return_value(flag_clear_memory=flag_clear_memory)
+        return(ans)
+      }
+      #
+      #
+      #
+      #
+      # if(!flag_wait) {
+      #
+      #   job<-self$create_job(job_name)
+      #
+      #   job$run_task(
+      #     send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
+      #               flag_check_first=flag_check_first)
+      #   )
+      #   return(job)
+      # } else {
+      #   send_file(private$cl_connection_, file_path = local_path, remote_path = remote_path,
+      #             flag_check_first=flag_check_first)
+      # }
     }
 
   ),
