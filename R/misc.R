@@ -220,3 +220,26 @@ compute_load_between=function(load_before, load_after) {
             wall_time=load_after$wall_time - load_before$wall_time)
   return(ans)
 }
+
+can_connect_to_host<-function(ip) {
+  ans<-system(command = paste0('ping -c 1 ',ip, ' -W 1'), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  if(ans!=0) {
+    ans<-paste0("Host ", ip, " cannot be reached by ICMP-ECHO (ping)")
+    return(ans)
+  }
+  ans<-system(command = paste0('timeout 2 nc -z ',ip, ' 22'), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  if(ans!=0){
+    if(ans==125) {
+      ans=paste0("Host ", ip, " doesn't seem to respond on TCP port 22")
+    } else {
+      ans=paste0("Host ", ip, " rejects connections on TCP port 22")
+    }
+    return(ans)
+  }
+  ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', ip, ' exit'))
+  if(ans!=0){
+    ans=paste0("Cannot non-interactively estabilish SSH connection with ", ip, ". Try connecting manually using ssh ", ip, " and make sure it connects without any prompts.")
+    return(ans)
+  }
+  return("")
+}

@@ -3,7 +3,12 @@ RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(host_address, username=NULL,port=11001, network_interface=NULL) {
       #browser()
+      can_connect<-can_connect_to_host(host_address)
+      if(can_connect!="") {
+        stop(paste0(can_connect))
+      }
       private$host_address_<-host_address
+
       private$mutex_next_ <- synchronicity::boost.mutex(synchronicity::uuid())
 
       if(is.null(username)) {
@@ -201,6 +206,12 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
 
+    get_job_by_nr=function(job_nr) {
+      ans<-private$job_history_$get_job_by_nr(jobnr=job_nr)
+      job<-RemoteJob$new(job_entry=ans, remote_server=self,
+                          job_history=private$job_history_, job_nr=job_nr)
+      return(job)
+    },
     .get_aux_connection=function() {private$cl_aux_connection_},
     .get_main_connection=function() {private$cl_connection_},
     .get_pid=function() {private$cl_pid_},

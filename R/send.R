@@ -15,7 +15,9 @@ send_file<-function(cl, file_path, remote_path, flag_check_first=TRUE) {
 
   if(!flag_may_skip_upload) {
     n<-file.size(file_path)
-    a<-readBin(file(file_path, 'rb'), raw(), n=n)
+    file_handle<-file(file_path, 'rb')
+    a<-readBin(file_handle, raw(), n=n)
+    close(file_handle)
     e<-new.env()
     assign('a', a, envir=e)
     parallel::clusterExport(cl, 'a', envir = e)

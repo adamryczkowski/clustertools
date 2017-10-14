@@ -81,7 +81,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
 
     pop_return_value = function(flag_wait_until_finished=FALSE, timeout=0) {
       if(flag_wait_until_finished) {
-        flag_ready<-private$job_entry_$wait_for_task_finish(timeout=timeout)
+        flag_ready<-private$job_entry_$wait_until_finished(timeout=timeout)
         if(!flag_ready) {
           return(simpleError("Job is still executing"))
         }
