@@ -2,16 +2,16 @@ library(clustertools)
 
 library(testthat)
 
+source("remote_host.R")
 
+context(paste0('Executing long job on ', remote_host))
 
-context('Executing long job')
-
-test_that("Scheduling long job", {
+test_that(paste0("Scheduling long job on ", remote_host), {
   gc()
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   a<-system.time(srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = TRUE))
-  expect_lt(a[[3]],1.6)
+  expect_lt(a[[3]],1.7)
   expect_gt(a[[3]],1)
 
   t<-system.time(srv_loc$execute_job(job_name = 'long2', expression = Sys.sleep(3), flag_wait = TRUE, timeout = 1))

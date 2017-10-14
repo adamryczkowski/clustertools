@@ -56,7 +56,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
         mem_size =capabilities$mem_kb * 1024,
         net_send_speed =capabilities$net_send_speed,
         net_receive_speed =capabilities$net_receive_speed,
-        host_name =capabilities$host_name
+        host_name =capabilities$host_name,
+        ping_time =capabilities$ping_time
       )
 
 #      private$capabilities_ <- BackgroundTask$new()
@@ -89,7 +90,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
                     paste0("CPU speed: ", gsub('.{1}$', '', utils:::format.object_size(2000/self$cpu_speed2, "auto")), " primes/second\n")
                   },
                   "net_send_speed: ", utils:::format.object_size(self$net_send_speed*1000, "auto"), "/second\n",
-                  "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n\n"
+                  "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n",
+                  "ping_time: ", round(self$ping_time*1000), " ms\n\n"
       )
       cat(rap)
       current_load <- self$get_current_load()
@@ -249,9 +251,16 @@ RemoteServer<-R6::R6Class("RemoteServer",
       return(retvalue)
     },
 
-    execute_job=function(job_name, expression, flag_wait=FALSE, timeout=0, flag_clear_memory=TRUE) {
+    execute_job=function(expression, job_name="", flag_wait=NULL, timeout=0, flag_clear_memory=TRUE) {
       expr<-substitute(expression)
       command<-deparse(expr)
+      if(is.null(flag_wait)) {
+        if(job_name!="" || timeout!=0) {
+          flag_wait=FALSE
+        } else {
+          flag_wait=TRUE
+        }
+      }
       m_entry_mutex <- synchronicity::boost.mutex(synchronicity::uuid()) #Mutex that synchronizes start of the thread.
       #Thanks to him, there will be only one thread that is in the procss of spawning
       synchronicity::lock(m_entry_mutex)
@@ -525,6 +534,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
     mem_size          = function() {private$fill_capabilities(TRUE); private$capabilities_$mem_size},
     net_send_speed    = function() {private$fill_capabilities(TRUE); private$capabilities_$net_send_speed},
     net_receive_speed = function() {private$fill_capabilities(TRUE); private$capabilities_$net_receive_speed},
+    ping_time = function() {private$fill_capabilities(TRUE); private$capabilities_$ping_time},
     remote_tmp_dir = function() {private$remote_tmp_dir_},
     cl_connection     = function() {private$cl_connection_},
     cl_aux_connection     = function() {private$cl_aux_connection_},

@@ -2,15 +2,16 @@ library(clustertools)
 
 library(testthat)
 
+source("remote_host.R")
 
-context("Executing a simple job remotely")
+context(paste0("Executing a simple job remotely", remote_host))
 
-test_that("Executing a simple job remotely", {
+test_that(paste0("Executing a simple job remotely on ", remote_host), {
   gc()
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost', port=11002)
+  srv_loc<-RemoteServer$new(remote_host, port=11002)
 #  debugonce(srv_loc$execute_job)
-  remote_pid<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  remote_pid<-srv_loc$execute_job(Sys.getpid(), job_name = 'get_syspid', flag_wait = TRUE, flag_clear_memory = FALSE)
 
   expect_true(is.numeric(remote_pid))
   expect_true(remote_pid != Sys.getpid())
@@ -44,7 +45,7 @@ test_that("Executing a simple job remotely", {
 
 context('Job that causes error')
 
-test_that("Executing a job that makes an error", {
+test_that(paste0("Executing a job that makes an error on ",remote_host), {
   gc()
   b<-BackgroundTask$new()
   b$run_task(expr = list()-1)
@@ -52,8 +53,8 @@ test_that("Executing a job that makes an error", {
   expect_true('try-error' %in% class(a))
 
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
-  out<-srv_loc$execute_job('error_job', list()-1, flag_wait = FALSE, flag_clear_memory = FALSE)
+  srv_loc<-RemoteServer$new(remote_host)
+  out<-srv_loc$execute_job(list()-1, job_name = 'error_job', flag_wait = FALSE, flag_clear_memory = FALSE)
 
   expect_error(out$peek_return_value(flag_wait_until_finished = TRUE))
 
@@ -64,19 +65,19 @@ test_that("Executing a job that makes an error", {
 })
 
 
-test_that("Setting and removing servers quickly", {
+test_that(paste0("Setting and removing servers quickly on ", remote_host), {
   gc()
-  srv_loc<-RemoteServer$new('localhost')
-  remote_pid1<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  srv_loc<-RemoteServer$new(remote_host)
+  remote_pid1<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', flag_wait = TRUE, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
 
-  srv_loc<-RemoteServer$new('localhost')
-  remote_pid2<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  srv_loc<-RemoteServer$new(remote_host)
+  remote_pid2<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', flag_wait = TRUE, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
   expect_false(remote_pid1 == remote_pid2)
 
-  srv_loc<-RemoteServer$new('localhost')
-  remote_pid3<-srv_loc$execute_job('get_syspid', Sys.getpid(), flag_wait = TRUE, flag_clear_memory = FALSE)
+  srv_loc<-RemoteServer$new(remote_host)
+  remote_pid3<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', flag_wait = TRUE, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
   expect_false(remote_pid1 == remote_pid3)
 

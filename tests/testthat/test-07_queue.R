@@ -2,18 +2,18 @@ library(clustertools)
 
 library(testthat)
 
+source("remote_host.R")
 
+context(paste0('Long queue on ', remote_host))
 
-context('Long queue')
-
-test_that("Checking the timing of the tasks", {
+test_that(paste0("Checking the timing of the tasks on ", remote_host), {
   gc()
 
 
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   bt<-system.time(
     for(i in 1:10) {
-      srv_loc$execute_job(job_name = 'benchmark', 2+2, flag_wait = TRUE)
+      srv_loc$execute_job(2+2, job_name = 'benchmark', flag_wait = TRUE)
     })[[3]]/10
 
   expect_lt(bt, 1)
@@ -41,7 +41,7 @@ test_that("Checking the timing of the tasks", {
   expect_gt(t[[3]],1.5+bt)
 
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = FALSE)
   expect_true(a1$is_running())
 #  debugonce(srv_loc$execute_job)
@@ -52,7 +52,7 @@ test_that("Checking the timing of the tasks", {
 
 
 
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   #debugonce(srv_loc$execute_job)
   a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(0.9), flag_wait = FALSE)
   # m<-srv_loc$mutex
@@ -68,7 +68,7 @@ test_that("Checking the timing of the tasks", {
   expect_true(a2$is_finished())
 
 
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = FALSE)
   expect_true(a1$is_running())
   a2<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(10), flag_wait = FALSE)

@@ -2,12 +2,14 @@ library(clustertools)
 
 library(testthat)
 
-context('Executing big transfer')
+source("remote_host.R")
 
-test_that("Executing a big transfer", {
+context(paste0('Executing big transfer on ', remote_host))
+
+test_that(paste0("Executing a big transfer on ", remote_host), {
   gc()
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
 
   rec_cnt<-10^6
 #  rec_cnt<-10

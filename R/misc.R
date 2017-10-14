@@ -41,6 +41,12 @@ get_cpu_capabilies<-function(cl) {
   # capabilities$net_send_speed<-1/(system.time(parallel::clusterExport(cl, 'obj', envir = e))[[3]]/2000)
   # capabilities$net_receive_speed<-1/(system.time(parallel::clusterEvalQ(cl, obj))[[3]]/2000)
 
+  ping_time<-0
+  for(i in seq(3)) {
+    ping_time<-ping_time+system.time(MyClusterEval(cl, 2+2))[[3]]
+  }
+  capabilities$ping_time<-ping_time/3
+
   return(capabilities)
 }
 

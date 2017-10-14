@@ -2,15 +2,15 @@ library(clustertools)
 
 library(testthat)
 
+source("remote_host.R")
 
+context(paste0('Receiving from ',remote_host))
 
-context('Receiving from remote')
-
-test_that("Receiving object from remote", {
+test_that(paste0("Receiving object from ", remote_host), {
   gc()
   #todo
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   a<-srv_loc$send_objects(job_name = "send", named_list_of_objects = list(a=10:14, b="second string"), flag_wait = TRUE)
   #debugonce(srv_loc$receive_objects)
   a<-srv_loc$receive_objects(object_names = "a" , job_name = "receive1")

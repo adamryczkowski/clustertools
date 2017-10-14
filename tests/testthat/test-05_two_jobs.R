@@ -2,14 +2,14 @@ library(clustertools)
 
 library(testthat)
 
+source("remote_host.R")
 
+context(paste0('Executing two jobs on ', remote_host))
 
-context('Executing two jobs')
-
-test_that("Scheduling two tasks with the same name", {
+test_that(paste0("Scheduling two tasks with the same name on ", remote_host), {
   gc()
   options(warn=2)
-  srv_loc<-RemoteServer$new('localhost')
+  srv_loc<-RemoteServer$new(remote_host)
   a1<-srv_loc$execute_job(expression = 2+2 , job_name = "job", flag_wait = TRUE, flag_clear_memory = FALSE)
   a2<-srv_loc$execute_job(expression = 3+3 , job_name = "job", flag_wait = TRUE, flag_clear_memory = FALSE)
 
