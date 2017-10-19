@@ -11,16 +11,20 @@ JobHistory<-R6::R6Class("JobHistory",
 
     #expression requires something that evaluates to list of 3 elements:
     #start_stats, ans, end_stats
-    run_task=function(job_name, expression, command) {
+    run_task=function(job_name, expression_, env=new.env(), command) {
       #First it gathers current statistics
       #browser()
-      expr <- substitute(expression)
+      expr <- substitute(expression_)
+      return(self$run_task_(job_name, expr, env, command))
+    },
 
+    run_task_=function(job_name, expr, env=new.env(), command) {
       job <- private$create_job(job_name, command = command)
 
-      job$job$run_task(expr)
+      job$job$run_task_(expr, env)
       return(list(job=job, jobnr=length(private$jobs_)))
     },
+
 
     is_job_running=function() {
       return(!is.na(self$get_running_job_nr()))
@@ -170,6 +174,9 @@ JobEntry<-R6::R6Class("JobEntry",
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
           if(!is.null(ans)) {
             if(!'try-error' %in% class(ans)) {
+              if(! 'start_stats' %in% names(ans)){
+                stop("Parallel task didn't return 'start_stats' object. Only ", capture.output(str(ans)), ". ")
+              }
               private$stats_before2_ <- ans$start_stats
               private$stats_after_ <- ans$end_stats
               if(length(ans$ans)==1){

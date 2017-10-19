@@ -3,13 +3,18 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
  public = list(
    initialize=function() {
    },
-   run_task=function(expr, flag_log_command=FALSE) {
+   run_task=function(expr_, env=new.env(), flag_log_command=FALSE) {
+     expr<-substitute(expr_)
+     self$run_task_(expr, env, flag_log_command=FALSE)
+   },
+   run_task_=function(expr, env=new.env(), flag_log_command=FALSE) {
      if(self$is_task_running()) {
        stop("Another background task is already running!")
      }
      Sys.sleep(0.01)
-#     browser()
-     private$job_ <- parallel::mcparallel(expr)
+     #     browser()
+     env$expr_BackgroundTask_<-expr
+     private$job_ <- eval(quote(parallel::mcparallel(expr_BackgroundTask_)), envir = env)
      if(flag_log_command){
        private$command_ <- deparse(expr)
      } else {

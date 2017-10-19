@@ -13,7 +13,7 @@ test_that(paste0("Checking the timing of the tasks on ", remote_host), {
   srv_loc<-RemoteServer$new(remote_host)
   bt<-system.time(
     for(i in 1:10) {
-      srv_loc$execute_job(2+2, job_name = 'benchmark', flag_wait = TRUE)
+      srv_loc$execute_job(2+2, job_name = 'benchmark', timeout = 0)
     })[[3]]/10
 
   expect_lt(bt, 1)
@@ -23,7 +23,7 @@ test_that(paste0("Checking the timing of the tasks on ", remote_host), {
   for(i in 1:5) {
     a[[i]]<-eval(substitute(srv_loc$execute_job(job_name = 'short', expression = {
       Sys.sleep(1+i/100)
-    }, flag_wait = FALSE),
+    }, timeout = -1),
     list(i=i)))
   }
 
@@ -42,10 +42,10 @@ test_that(paste0("Checking the timing of the tasks on ", remote_host), {
 
   options(warn=2)
   srv_loc<-RemoteServer$new(remote_host)
-  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = FALSE)
+  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), timeout = -1)
   expect_true(a1$is_running())
 #  debugonce(srv_loc$execute_job)
-  t<-system.time(srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = TRUE))
+  t<-system.time(srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), timeout = 0))
   expect_lt(t[[3]],2.5+bt)
   expect_gt(t[[3]],1.5+bt)
   expect_true(a1$is_finished())
@@ -54,11 +54,11 @@ test_that(paste0("Checking the timing of the tasks on ", remote_host), {
 
   srv_loc<-RemoteServer$new(remote_host)
   #debugonce(srv_loc$execute_job)
-  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(0.9), flag_wait = FALSE)
+  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(0.9))
   # m<-srv_loc$mutex
   # synchronicity::unlock(m)
   expect_true(a1$is_running())
-  a2<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1.1), flag_wait = FALSE)
+  a2<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1.1))
   expect_true(a2$is_scheduled())
   #debugonce(a2$peek_return_value)
   t<-system.time(a2$peek_return_value(flag_wait_until_finished = TRUE))
@@ -69,9 +69,9 @@ test_that(paste0("Checking the timing of the tasks on ", remote_host), {
 
 
   srv_loc<-RemoteServer$new(remote_host)
-  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), flag_wait = FALSE)
+  a1<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1))
   expect_true(a1$is_running())
-  a2<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(10), flag_wait = FALSE)
+  a2<-srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(10))
   expect_true(a2$is_scheduled())
   t<-system.time(a1$peek_return_value(flag_wait_until_finished = TRUE))
   expect_lt(t[[3]],1.5+bt)

@@ -14,3 +14,6 @@ get_first_host<-function() {
 }
 remote_host<-get_first_host()
 
+futile.logger::flog.threshold(futile.logger::ERROR)
+futile.logger::flog.remove('mutex.unlock')
+futile.logger::flog.remove('mutex.lock')

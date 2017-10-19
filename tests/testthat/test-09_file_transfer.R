@@ -18,7 +18,7 @@ test_that(paste0("Simple transfer of file to ", remote_host), {
   options(warn=2)
   srv_loc<-RemoteServer$new(remote_host)
   fileinfo<-prepare_file()
-  expect_true(is.numeric(srv_loc$send_file(local_path =file.path(fileinfo$dir, fileinfo$file), remote_path = file.path(fileinfo$dir, "file2.rds"), flag_wait = TRUE)))
+  expect_true(is.numeric(srv_loc$send_file(local_path =file.path(fileinfo$dir, fileinfo$file), remote_path = file.path(fileinfo$dir, "file2.rds"), timeout = 0)))
 
   srv_loc$finalize()
 })
@@ -29,7 +29,7 @@ test_that(paste0("Transfer of file that requires new directory to ", remote_host
   srv_loc<-RemoteServer$new(remote_host)
   fileinfo<-prepare_file()
   expect_true(is.numeric(srv_loc$send_file(local_path =file.path(fileinfo$dir, fileinfo$file),
-                                          remote_path = file.path(paste0(fileinfo$dir, "_remote"), fileinfo$file), flag_wait = TRUE)))
+                                          remote_path = file.path(paste0(fileinfo$dir, "_remote"), fileinfo$file), timeout = 0)))
 
   srv_loc$finalize()
 })

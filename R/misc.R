@@ -249,3 +249,64 @@ can_connect_to_host<-function(ip) {
   }
   return("")
 }
+
+get_call_stack<-function(nskip=1) {
+  n <- length(x <- sys.calls())
+  srcfile<-character(n)
+  srcline<-character(n)
+  srcexpr<-character(n)
+  for (i in 1L:n) {
+    xi <- x[[i]]
+    m <- length(xi)
+    if (!is.null(srcref <- attr(xi, "srcref"))) {
+      srcfile_tmp <- attr(srcref, "srcfile")
+      srcfile[[i]]<-pathcat::make.path.relative(target.path = normalizePath(srcfile_tmp$filename), base.path = getwd())
+      srcline[[i]]<-srcref[1L]
+    }
+    srcexpr[[i]]=paste0(deparse(xi), collapse = "\n")
+  }
+  return(data.frame(expr=srcexpr[-seq(n-nskip, n)], file=srcfile[-seq(n-nskip, n)], line=as.numeric(srcline[-seq(n-nskip, n)]), stringsAsFactors = FALSE))
+}
+
+format_call_stack<-function(cs) {
+  valid_lines<-which(!is.na(cs$line))
+  if(length(valid_lines)==0) {
+    paste0(cs$expr, collapse = "->")
+  } else {
+    paste0(paste0(cs$expr[valid_lines], " ", cs$file[valid_lines], "#", cs$line[valid_lines]), collapse = "->")
+  }
+}
+
+get_mutex<-function() {
+  trace<-get_call_stack()
+#  futile.logger::flog.info("%s: ", str(tail(trace, 3)), name='mutex.new')
+  mut_name<-synchronicity::uuid()
+  ans <- synchronicity::boost.mutex(mut_name)
+  futile.logger::flog.info("PID %s %s got new mutex %s", Sys.getpid(), format_call_stack(trace), mut_name, name='mutex.new')
+  return(ans)
+}
+
+lock_mutex<-function(m) {
+  trace<-get_call_stack()
+  a<-deparse(substitute(m))
+  futile.logger::flog.info("PID %s %s is trying to lock mutex %s with id %s",
+                           Sys.getpid(),
+                           format_call_stack(trace),
+                           a, synchronicity::describe(m)@description$shared.name, name='mutex.lock')
+  synchronicity::lock(m)
+  futile.logger::flog.info("PID %s %s Mutex %s (id %s) is locked",
+                           Sys.getpid(),
+                           format_call_stack(trace),
+                           a, synchronicity::describe(m)@description$shared.name, name='mutex.lock')
+}
+
+unlock_mutex<-function(m) {
+  trace<-get_call_stack()
+  a<-deparse(substitute(m))
+  synchronicity::unlock(m)
+  futile.logger::flog.info("PID %s %s Mutex %s (id %s) is UNlocked",
+                           Sys.getpid(),
+                           format_call_stack(trace),
+                           a, synchronicity::describe(m)@description$shared.name,
+                           name='mutex.unlock')
+}

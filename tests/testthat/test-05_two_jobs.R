@@ -10,8 +10,8 @@ test_that(paste0("Scheduling two tasks with the same name on ", remote_host), {
   gc()
   options(warn=2)
   srv_loc<-RemoteServer$new(remote_host)
-  a1<-srv_loc$execute_job(expression = 2+2 , job_name = "job", flag_wait = TRUE, flag_clear_memory = FALSE)
-  a2<-srv_loc$execute_job(expression = 3+3 , job_name = "job", flag_wait = TRUE, flag_clear_memory = FALSE)
+  a1<-srv_loc$execute_job(expression = 2+2 , job_name = "job", timeout = 0, flag_clear_memory = FALSE)
+  a2<-srv_loc$execute_job(expression = 3+3 , job_name = "job", timeout = 0, flag_clear_memory = FALSE)
 
   a<-srv_loc$get_job_by_name('job')
 

@@ -3,10 +3,11 @@ srv2<-RemoteServer$new("192.168.7.146")
 srv1<-RemoteServer$new("10.55.181.54")
 srv2<-RemoteServer$new('localhost')
 srv3<-RemoteServer$new("10.55.181.43")
+#futile.logger::flog.appender(futile.logger::appender.file("/tmp/log1.txt"))
 srv1
 debugonce(srv2$send_file)
 srv2$send_file(local_path = "/home/adam/youtube-dl.txt", remote_path = "/home/adam/youtube-dl.txt", flag_wait = TRUE, job_name = "job")
-srv2
+srv2$execute_job(2+2)
 
 srv1$get_pid()
 
