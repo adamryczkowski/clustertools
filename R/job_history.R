@@ -1,12 +1,13 @@
 JobHistory<-R6::R6Class("JobHistory",
   public = list(
-    initialize=function(stats_function) {
+    initialize=function(stats_function, server) {
 #      browser()
 
       private$get_stats_function_ <- stats_function
       private$jobs_=list()
-      initjob <- private$create_job('.init','', flag_init_job=TRUE)
+      initjob <- private$create_job('.init','', NULL, flag_init_job=TRUE)
       private$last_finished_job_=1
+      private$server_obj_<-server
     },
 
     #expression requires something that evaluates to list of 3 elements:
@@ -18,8 +19,8 @@ JobHistory<-R6::R6Class("JobHistory",
       return(self$run_task_(job_name, expr, env, command))
     },
 
-    run_task_=function(job_name, expr, env=new.env(), command) {
-      job <- private$create_job(job_name, command = command)
+    run_task_=function(job_name, expr, env=new.env(), command, mutex) {
+      job <- private$create_job(job_name, command = command, mutex=mutex)
 
       job$job$run_task_(expr, env)
       return(list(job=job, jobnr=length(private$jobs_)))
@@ -130,19 +131,21 @@ JobHistory<-R6::R6Class("JobHistory",
       }
     },
 
-    create_job=function(job_name, command, flag_init_job=FALSE) {
+    create_job=function(job_name, command, mutex, flag_init_job=FALSE) {
       stats<-private$get_stats_before_enqueue()
       newjob <- JobEntry$new(job_name=job_name,
                              stats_before=stats,
+                             mutex=mutex,
                              command = command,
-                             flag_init_job=flag_init_job)
+                             flag_init_job=flag_init_job, server=private$server_obj_)
       private$jobs_<-c(private$jobs_, setNames(list(newjob), job_name))
       return(newjob)
     },
 
     jobs_=list(),
     last_finished_job_=0,
-    get_stats_function_=NA
+    get_stats_function_=NA,
+    server_obj_=NA
   ),
 
   cloneable = FALSE,
@@ -152,18 +155,20 @@ JobHistory<-R6::R6Class("JobHistory",
 
 JobEntry<-R6::R6Class("JobEntry",
   public = list(
-    initialize=function(job_name, stats_before, command=NULL, flag_init_job=FALSE) {
+    initialize=function(job_name, stats_before, mutex, command=NULL, flag_init_job=FALSE, server) {
       if(!flag_init_job) {
         private$job_ <- BackgroundTask$new()
       } else {
         private$stats_after_ <- stats_before
       }
       private$ans_<-simpleError("This job was never run")
+      private$mutex_<-mutex
       private$job_name_ <- job_name
       if(!is.null(command)) {
         private$command_ <- paste0(command, collapse ='\n' )
       }
       private$stats_before_ <- stats_before
+      private$server_obj_ <- server
     },
 
     is_task_finished=function() {
@@ -179,6 +184,13 @@ JobEntry<-R6::R6Class("JobEntry",
               }
               private$stats_before2_ <- ans$start_stats
               private$stats_after_ <- ans$end_stats
+              private$tag_ <- ans$tag
+              private$pid_ <- ans$pid
+              if(ans$tag=="benchmark") {
+                srv<-private$server_obj_
+                e<-environment(srv$print)
+                e$private$set_capabilities(ans$ans)
+              }
               if(length(ans$ans)==1){
                 if(is.environment(ans$ans)) {
                   private$ans_ <- ans$ans[[names(ans$ans)]]
@@ -203,9 +215,24 @@ JobEntry<-R6::R6Class("JobEntry",
       }
     },
 
+    is_task_aborted=function() {
+      if(self$is_task_finished()) {
+        ans<-identical(private$stats_after_, "cancelled")
+      } else {
+        ans<-synchronicity::lock(private$mutex_, block=FALSE)
+        if(ans==TRUE) {
+          synchronicity::unlock(private$mutex_)
+          return(TRUE)
+        }
+      }
+    },
+
     get_return_value=function(flag_clear_memory=TRUE) {
       if(!self$is_task_finished()) {
         return(simpleError("Task is still running"))
+      }
+      if(self$is_task_aborted()) {
+        return(simpleError("Task is aborted"))
       }
       ans<-private$ans_
       if(flag_clear_memory){
@@ -242,13 +269,6 @@ JobEntry<-R6::R6Class("JobEntry",
   ),
 
   active = list(
-    tag = function(newtag) {
-      if(missing(newtag)) {
-        return(private$tag_)
-      } else {
-        private$tag_ <- newtag
-      }
-    },
     command = function(newcommand) {
       if(missing(newcommand)) {
         return(private$command_)
@@ -257,7 +277,9 @@ JobEntry<-R6::R6Class("JobEntry",
       }
     },
     name = function() private$job_name_,
-    job = function() return(private$job_)
+    job = function() return(private$job_),
+    tag = function() return(private$tag_),
+    pid = function() return(private$pid_)
   ),
 
   private = list(
@@ -265,11 +287,13 @@ JobEntry<-R6::R6Class("JobEntry",
     ans_=NA,
     job_name_=NA,
     command_=NA,
-    tag_=NA,
     stats_before_=NA,
     stats_before2_=NA,
-    stats_after_=NA
-
+    stats_after_=NA,
+    mutex_=NA,
+    pid_=NA,
+    tag_=NA,
+    server_obj_=NA #For use with benchmark, to allow communication with the server
   ),
 
   cloneable = FALSE,

@@ -47,21 +47,12 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
 
       private$cl_aux_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
-      private$job_history_<-JobHistory$new(stats_function=function() private$get_current_stats(flag_execute_on_aux = TRUE))
+      private$job_history_<-JobHistory$new(stats_function=function() private$get_current_stats(flag_execute_on_aux = TRUE), server=self)
 #      cl<-parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
       cl<-private$cl_aux_connection_
 
-      capabilities<-get_cpu_capabilies(cl)
-      private$capabilities_<-list(
-        cpu_cores =capabilities$cores,
-        cpu_speed =capabilities$speed,
-        cpu_speed2 =capabilities$speed2,
-        mem_size =capabilities$mem_kb * 1024,
-        net_send_speed =capabilities$net_send_speed,
-        net_receive_speed =capabilities$net_receive_speed,
-        host_name =capabilities$host_name,
-        ping_time =capabilities$ping_time
-      )
+      private$set_capabilities()
+      self$run_benchmark()
 
 #      private$capabilities_ <- BackgroundTask$new()
 #      private$capabilities_$run_task(c(get_cpu_capabilies(cl), remote_tmp_dir=private$remote_tmp_dir_))
@@ -80,22 +71,32 @@ RemoteServer<-R6::R6Class("RemoteServer",
                error=function(e)e)
       tryCatch(parallel::stopCluster(private$cl_connection_),
                error=function(e)e)
-
+#      if(!is.atomic(private$mutex_main_)) {
+#        synchronicity::unlock(private$mutex_main_)
+#      }
+#      if(!is.atomic(private$mutex_prev_)) {
+#        synchronicity::unlock(private$mutex_prev_)
+#      }
     },
 
     print=function() {
-      rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, " with ",
-                  self$cpu_cores, " core CPU and ",
-                  utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
-                  if(self$cpu_speed2=='') {
-                    paste0("CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n")
-                  } else {
-                    paste0("CPU speed: ", gsub('.{1}$', '', utils:::format.object_size(2000/self$cpu_speed2, "auto")), " primes/second\n")
-                  },
-                  "net_send_speed: ", utils:::format.object_size(self$net_send_speed*1000, "auto"), "/second\n",
-                  "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n",
-                  "ping_time: ", round(self$ping_time*1000), " ms\n\n"
-      )
+      if(is.na(self$cpu_cores)) {
+        rap<-paste0("Remote host ", self$host_address, ". Benchmarks and specifications not available yet.\n\n"
+        )
+      } else {
+        rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, " with ",
+                    self$cpu_cores, " core CPU and ",
+                    utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
+                    if(self$cpu_speed2=='') {
+                      paste0("CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n")
+                    } else {
+                      paste0("CPU speed: ", gsub('.{1}$', '', utils:::format.object_size(2000/self$cpu_speed2, "auto")), " primes/second\n")
+                    },
+                    "net_send_speed: ", utils:::format.object_size(self$net_send_speed*1000, "auto"), "/second\n",
+                    "net_receive_speed: ", utils:::format.object_size(self$net_receive_speed*1000, "auto"), "/second\n",
+                    "ping_time: ", round(self$ping_time*1000), " ms\n\n"
+        )
+      }
       cat(rap)
       current_load <- self$get_current_load()
 
@@ -130,6 +131,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     get_count_statistics=function() {
+      private$job_history_$is_job_running()
       return(list(
         total = private$job_history_$get_job_count()-1, #We hide the initial task, because it is meaningless
         finished = private$job_history_$get_finished_job_count()-1,
@@ -137,6 +139,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       ))
     },
 
+    #Runs benchmark. When completes, the results from the benchmark will overwrite the old ones
     get_current_load=function(flag_total_load=FALSE) {
 #      browser()
       if(flag_total_load) {
@@ -212,9 +215,9 @@ RemoteServer<-R6::R6Class("RemoteServer",
     },
 
     get_job_by_nr=function(job_nr) {
-      ans<-private$job_history_$get_job_by_nr(jobnr=job_nr)
+      ans<-private$job_history_$get_job_by_nr(jobnr=job_nr+1) #We hide the initial job
       job<-RemoteJob$new(job_entry=ans, remote_server=self,
-                          job_history=private$job_history_, job_nr=job_nr)
+                          job_history=private$job_history_, job_nr=job_nr+1)
       return(job)
     },
     .get_aux_connection=function() {private$cl_aux_connection_},
@@ -252,6 +255,25 @@ RemoteServer<-R6::R6Class("RemoteServer",
         }})
       setNames(retvalue, jobnames)
       return(retvalue)
+    },
+
+    wait_for_all_tasks=function(timeout=0) {
+      n<-private$job_history_$get_job_count()
+      j<-private$job_history_$get_job_by_nr(n)
+      j$wait_until_finished(timeout)
+    },
+
+    run_benchmark=function() {
+      command<-paste0("<benchmarking task>")
+
+      env<-new.env()
+      env$cl<-private$cl_connection_
+      tag<-"benchmark"
+      attr(tag, 'callback')<-private$set_capabilities
+      ans<-private$execute_wait_(quote({
+        get_cpu_capabilies(cl)
+      }), env=env, command=command, job_name="", timeout=-1, flag_clear_memory=TRUE, tag=tag)
+      return(NULL)
     },
 
     #If timeout<0 then function will never wait.
@@ -392,22 +414,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
                                                 #When there are jobs, this mutex is a mutex that will get released when the last job finishes
 
     fill_capabilities=function(flag_wait=TRUE) {
-      if('BackgroundTask' %in% class(private$capabilities_)){
-        job<-private$capabilities_
-        if(job$is_task_running() && !flag_wait )  {
-          return(NULL)
-        }
-        capabilities<-job$get_task_return_value()
-        ans<-list(
-          cpu_cores =capabilities$cores,
-          cpu_speed =capabilities$speed,
-          mem_size =capabilities$mem_kb * 1024,
-          net_send_speed =capabilities$net_send_speed,
-          net_receive_speed =capabilities$net_receive_speed,
-          host_name =capabilities$host_name
-        )
-        private$capabilities_<-ans
-      }
+      job<-private$job_history_$get_job_by_nr(2)
+      job$is_task_finished() #If the task is finished, this will probe the task and call the callback which will update the capabilities.
     },
 
     get_last_executed_job_nr=function() {
@@ -454,7 +462,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       }
     },
     #expr_after will be executed locally and asynchronously (will not block spawning another job).
-    execute_=function(expr, env, command, job_name="") {
+    execute_=function(expr, env, command, job_name="", tag="normal") {
 
       m_prev_mutex<-private$mutex_prev_
       m_main_mutex<-private$mutex_main_
@@ -476,6 +484,7 @@ RemoteServer<-R6::R6Class("RemoteServer",
       envloc$m_me_descr=synchronicity::describe(m_job_mutex)
       envloc$m_next_descr=synchronicity::describe(m_next_mutex)
       envloc$env=env
+      envloc$tag=tag
 
 #      env$_expr_RemoteServer_<-expr
  #     private$job_ <- eval(quote(parallel::mcparallel(_expr_BackgroundTask_)), envir = env)
@@ -494,27 +503,40 @@ RemoteServer<-R6::R6Class("RemoteServer",
           unlock_mutex(m_main) #Signalling the master thread we are done with init. The Init thread continues with
           #getting ready to accept end of our work
           lock_mutex(m_next) #Here we wait until the master is ready to accept the fact that we may have finished our work.
+
+
           lock_mutex(m_previous) #Only now waiting for the previous task to finish
+          lock_mutex(m_main) #We lock main when we are about to start executing in order to avoid race condtion,
           unlock_mutex(m_previous) #Remove now unnecesary mutex
+          unlock_mutex(m_main) #We have started
           rm(m_previous)
+          #when user wants to abort our thread exactly now
+          if (synchronicity::lock(m_me, block=FALSE)==FALSE) {
+            #We are still busy, so we have not been canceled
 
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
-          start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
+            stats<-get_current_load(cl, remote_tmp_dir, pid)
+            start_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb)
 
-          ans<-tryCatch({
-            eval(expr, env)
-          }, error=function(e) e)
+            ans<-tryCatch({
+              eval(expr, env)
+            }, error=function(e) e)
 
-          stats<-get_current_load(cl, remote_tmp_dir, pid)
+            stats<-get_current_load(cl, remote_tmp_dir, pid)
 
-          end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
-                          free_mem_kb=stats$free_mem_kb
-          )
+            end_stats<-list(peak_mem_kb=stats$peak_mem_kb, cpu_time=stats$cpu_time, wall_time=stats$wall_time, mem_kb=stats$mem_kb,
+                            free_mem_kb=stats$free_mem_kb
+            )
+          } else {
+            #We are being canceled, so no execution
+            start_stats="cancelled"
+            end_stats="cancelled"
+            ans<-"cancelled"
+          }
 
           unlock_mutex(m_me)
           unlock_mutex(m_next)
-          list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid)
-        }), env=envloc, command=command)
+          list(start_stats=start_stats, ans=ans, end_stats=end_stats, pid=pid, tag=tag)
+        }), env=envloc, command=command, mutex=m_job_mutex)
         # list(cl=private$cl_connection_, cl2=private$cl_aux_connection_, remote_tmp_dir=private$remote_tmp_dir_, pid=private$cl_pid_,
         #      m_main_descr=synchronicity::describe(m_main_mutex),
         #      env=env,
@@ -537,8 +559,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
 
       return(list(job=job, jobnr=job_nr))
     },
-    execute_wait_=function(expr, envir, command, job_name="", timeout, flag_clear_memory=FALSE) {
-      ans<-private$execute_(expr, envir, command, job_name=job_name)
+    execute_wait_=function(expr, envir, command, job_name="", timeout, flag_clear_memory=FALSE, tag="normal") {
+      ans<-private$execute_(expr, envir, command, job_name=job_name, tag=tag)
 
       job<-ans$job
       job_nr<-ans$jobnr
@@ -562,7 +584,34 @@ RemoteServer<-R6::R6Class("RemoteServer",
         }
         return(ans)
       }
+    },
+  set_capabilities=function(capabilities=NULL) {
+    if(is.null(capabilities)) {
+      private$capabilities_<-list(
+        cpu_cores =NA,
+        cpu_speed =NA,
+        cpu_speed2 =NA,
+        mem_size =NA,
+        net_send_speed =NA,
+        net_receive_speed =NA,
+        host_name =private$host_address_,
+        ping_time =NA,
+        wall_time = Sys.time()
+      )
+    } else{
+      private$capabilities_<-list(
+        cpu_cores =capabilities$cores,
+        cpu_speed =capabilities$speed,
+        cpu_speed2 =capabilities$speed2,
+        mem_size =capabilities$mem_kb * 1024,
+        net_send_speed =capabilities$net_send_speed,
+        net_receive_speed =capabilities$net_receive_speed,
+        host_name =capabilities$host_name,
+        ping_time =capabilities$ping_time,
+        wall_time = Sys.time()
+      )
     }
+  }
   ),
 
   cloneable = FALSE,

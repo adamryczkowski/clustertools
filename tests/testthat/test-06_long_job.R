@@ -11,7 +11,7 @@ test_that(paste0("Scheduling long job on ", remote_host), {
   options(warn=2)
   srv_loc<-RemoteServer$new(remote_host)
   a<-system.time(srv_loc$execute_job(job_name = 'long', expression = Sys.sleep(1), timeout = 0))
-  expect_lt(a[[3]],1.7)
+  expect_lt(a[[3]],6)
   expect_gt(a[[3]],1)
 
   t<-system.time(srv_loc$execute_job(job_name = 'long2', expression = Sys.sleep(3), timeout = 1))

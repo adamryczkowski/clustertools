@@ -29,6 +29,10 @@ RemoteJob<-R6::R6Class("RemoteJob",
       return(running_job_nr < private$job_nr_)
     },
 
+    is_aborted = function() {
+      private$job_history_$is_task_aborted()
+    },
+
     #Gets all the jobs that are sitting in front of us in the queue
     list_jobs_scheduled_after=function() {
       running_job_nr <- private$job_history_$get_running_job_nr()

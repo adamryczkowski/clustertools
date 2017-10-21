@@ -50,6 +50,7 @@ test_that(paste0("Multi-CPU task on ", remote_host), {
   gc()
   options(warn=2)
   srv_loc<-RemoteServer$new(remote_host)
+  srv_loc$wait_for_all_tasks()
   if(srv_loc$cpu_cores>1) {
     busy_sleep_ncpu<-function(time, ncpu) {
       busy_sleep<-function(time) {

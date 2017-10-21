@@ -71,27 +71,29 @@ test_that(paste0("Executing a job that makes an error on ",remote_host), {
 
   astat<-out$get_current_statistics()
   expect_true("list" %in% class(astat))
+  srv_loc$wait_for_all_tasks()
   expect_equal(srv_loc$get_count_statistics()$finished, 1)
   srv_loc$finalize()
 })
 
-
+context('Setting and removing servers quickly')
 test_that(paste0("Setting and removing servers quickly on ", remote_host), {
   gc()
   srv_loc<-RemoteServer$new(remote_host)
   remote_pid1<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', timeout = 0, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
+  srv_loc$finalize()
 
   srv_loc<-RemoteServer$new(remote_host)
   remote_pid2<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', timeout = 0, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
   expect_false(remote_pid1 == remote_pid2)
+  srv_loc$finalize()
 
   srv_loc<-RemoteServer$new(remote_host)
   remote_pid3<-srv_loc$execute_job(Sys.getpid(), job_name='get_syspid', timeout = 0, flag_clear_memory = FALSE)
   stats<- srv_loc$get_current_load()
   expect_false(remote_pid1 == remote_pid3)
-
   srv_loc$finalize()
 })
 
