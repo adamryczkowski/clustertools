@@ -1,7 +1,6 @@
-list_of_hosts<-list("192.168.10.146",
-                    "10.55.181.54",
-                    'localhost',
-                    "10.55.181.43")
+list_of_hosts<-list("192.168.10.134",
+#                    "10.55.181.54",
+                    'localhost')
 
 
 get_first_host<-function() {

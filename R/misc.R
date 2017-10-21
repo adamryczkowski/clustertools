@@ -1,4 +1,5 @@
 find_default_if<-function(target_ip=NULL){
+  target_ip<-curl::nslookup(target_ip)
   if(is.null(target_ip)) {
     return(system("/sbin/ip route | awk '/default/ { print $5 }'", intern=TRUE))
   } else {
@@ -10,6 +11,10 @@ find_default_if<-function(target_ip=NULL){
     pos<-which(iptools::ip_in_range(rep(target_ip, nrow(routes_tab)), routes_tab[,1]))
     return(routes_tab[pos,2])
   }
+}
+
+ifaddr<-function(idev='lo') {
+  system(paste0('/sbin/ip -o -4 addr list ', idev, " | awk '{print $4}' | cut -d/ -f1"), intern = TRUE)
 }
 
 get_cpu_capabilies<-function(cl) {
@@ -276,6 +281,8 @@ format_call_stack<-function(cs) {
     paste0(paste0(cs$expr[valid_lines], " ", cs$file[valid_lines], "#", cs$line[valid_lines]), collapse = "->")
   }
 }
+
+futile.logger::flog.threshold(futile.logger::WARN)
 
 get_mutex<-function() {
   trace<-get_call_stack()

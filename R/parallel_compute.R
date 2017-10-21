@@ -18,10 +18,12 @@ RemoteServer<-R6::R6Class("RemoteServer",
       if(is.null(network_interface)) {
          network_interface<-find_default_if(host_address)
       }
-      myip=system(paste0("ip addr show ", network_interface, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
+      myif<-find_default_if(target_ip = host_address)
+      myip<-ifaddr(myif[[1]])[[1]]
+        #system(paste0("ip addr show ", network_interface, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
 
-      private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip[[1]], port=port, homogeneous=FALSE)
+      private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
 
 
       private$remote_tmp_dir_<-copy_scripts_to_server(private$cl_connection_)
