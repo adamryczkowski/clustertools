@@ -1,29 +1,65 @@
 
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
-    initialize=function(host_address, username=NULL,port=11001, network_interface=NULL) {
-      #browser()
-      can_connect<-can_connect_to_host(host_address)
-      if(can_connect!="") {
-        stop(paste0(can_connect))
+    initialize=function(hostaddress, port="11011", network_interface=NULL, rscript=NULL) {
+      browser()
+      ouraddress<-port
+      host_els<-XML::parseURI(paste0('ssh://', hostaddress))
+      private$host_address_<-hostaddress
+      rshcmd<-paste0("ssh",
+                     if(!is.na(host_els$port)) paste0(" -p ", host_els$port) else "")
+      if(host_els$user!="") {
+        username<-host_els$user
+      } else {
+        username<-NULL
       }
-      private$host_address_<-host_address
 
-      private$mutex_prev_ <- get_mutex()#synchronicity::boost.mutex(synchronicity::uuid())
-      private$mutex_main_ <- get_mutex()
+      our_address<-XML::parseURI(paste0('ssh://', ouraddress))
+      if(is.na(our_address$port)) {
+        myif<-find_default_if(target_ip = host_els$server)
+        if(length(myif)==0){
+          if(is.null(network_interface)) {
+            network_interface<-find_default_if(host_els$server)
+          }
+          myif<-network_interface
+          browser()
+        }
+        myip<-ifaddr(myif[[1]])[[1]]
+        our_address<-XML::parseURI(paste0('ssh://', myip, ':', ouraddress))
+        ouraddress<-paste0(myip, ':', ouraddress)
+      }
+      private$our_address_<-ouraddress
+
+      if(!is.null(rscript)) {
+        private$rscript_<-rscript
+      }
 
       if(is.null(username)) {
         username<-system('whoami', intern = TRUE)
       }
-      if(is.null(network_interface)) {
-         network_interface<-find_default_if(host_address)
-      }
-      myif<-find_default_if(target_ip = host_address)
-      myip<-ifaddr(myif[[1]])[[1]]
         #system(paste0("ip addr show ", network_interface, " | awk '$1 == \"inet\" {gsub(/\\/.*$/, \"\", $2); print $2}'"), intern=TRUE)
 
+      can_connect<-can_connect_to_host(hostaddress, ouraddress)
+      if(can_connect!="") {
+        stop(paste0(can_connect))
+      }
 
-      private$cl_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+      old_seed <- .Random.seed
+      on.exit( { .Random.seed <<- old_seed } )
+      set.seed(Sys.time())
+
+      private$mutex_prev_ <- get_mutex()#synchronicity::boost.mutex(synchronicity::uuid())
+      private$mutex_main_ <- get_mutex()
+
+      if(!is.na(private$rscript_)) {
+        private$cl_connection_ <- parallel::makeCluster(rshcmd=rshcmd, host_els$server, user=username,
+                                                        master=our_address$server, port=our_address$port, homogeneous=FALSE,
+                                                        rscript=private$rscript_)
+      } else {
+        private$cl_connection_ <- parallel::makeCluster(rshcmd=rshcmd, host_els$server, user=username,
+                                                        master=our_address$server, port=our_address$port, homogeneous=FALSE)
+      }
+
 
 
       private$remote_tmp_dir_<-copy_scripts_to_server(private$cl_connection_)
@@ -46,9 +82,15 @@ RemoteServer<-R6::R6Class("RemoteServer",
         stop("Copying scripts to remote host failed")
       }
 
-      private$cl_aux_connection_ <- parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
+      if(!is.na(private$rscript_)) {
+        private$cl_aux_connection_ <- parallel::makeCluster(rshcmd=rshcmd, host_els$server, user=username,
+                                                            master=our_address$server, port=our_address$port, homogeneous=FALSE,
+                                                        rscript=private$rscript_)
+      } else {
+        private$cl_aux_connection_ <- parallel::makeCluster(rshcmd=rshcmd, host_els$server, user=username,
+                                                            master=our_address$server, port=our_address$port, homogeneous=FALSE)
+      }
       private$job_history_<-JobHistory$new(stats_function=function() private$get_current_stats(flag_execute_on_aux = TRUE), server=self)
-#      cl<-parallel::makeCluster(host_address, user=username, master=myip, port=port, homogeneous=FALSE)
       cl<-private$cl_aux_connection_
 
       private$set_capabilities()
@@ -405,6 +447,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
     cl_pid_=NA,
     capabilities_=NA,
     host_address_=NA,
+    our_address_=NA, #Our address as seen from the remote
+    rscript_=NA, #Location of the Rscript on the remote host
     remote_tmp_dir_=NA,
     job_history_= NA,
     mutex_main_ = NA,#This mutex locks critical queue managing code.
@@ -466,6 +510,10 @@ RemoteServer<-R6::R6Class("RemoteServer",
 
       m_prev_mutex<-private$mutex_prev_
       m_main_mutex<-private$mutex_main_
+
+      # old_seed <- .Random.seed
+      # on.exit( { .Random.seed <<- old_seed } )
+      # set.seed(Sys.time())
       m_next_mutex<-get_mutex()
       m_job_mutex<-get_mutex()
       lock_mutex(m_next_mutex)#We will not let the job start until we finish management

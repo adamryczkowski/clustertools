@@ -2,12 +2,25 @@ library(clustertools)
 
 library(testthat)
 
+futile.logger::flog.threshold(futile.logger::ERROR)
+futile.logger::flog.remove('mutex.unlock')
+futile.logger::flog.remove('mutex.lock')
+
+
 #setwd('tests/testthat')
 source("remote_host.R")
+#ssh -L 8090:localhost:8090 aryczkowski@grad-dev -o ServerAliveInterval=30 -R 11011:localhost:11011
+srv_loc<-RemoteServer$new("aryczkowski@127.0.0.1:8090", port=11011, rscript="/usr/bin/Rscript")
+#ssh aryczkowski@grad-dev -o ServerAliveInterval=30 -R 11012:localhost:11012
+srv_loc<-RemoteServer$new("aryczkowski@grad-dev", port='localhost:11012', rscript="/usr/bin/Rscript")
+srv_loc<-RemoteServer$new("aryczkowski@grad-dev", port=11013, rscript="/usr/bin/Rscript")
+srv_loc<-RemoteServer$new("localhost", port=11012)
 
 #futile.logger::flog.appender(futile.logger::appender.file("/tmp/log.txt"))
 #futile.logger::flog.threshold(futile.logger::INFO)
 
+debug(parallel::makeCluster)
+#srv_loc<-parallel::makeCluster(rshcmd="ssh -p 8090", "127.0.0.1", user="aryczkowski", master="127.0.0.1", port=11011, homogeneous=TRUE, rscript="/usr/bin/Rscript")
 
 context(paste0("Executing a simple job remotely", remote_host))
 
@@ -16,6 +29,7 @@ test_that(paste0("Executing a simple job remotely on ", remote_host), {
   options(warn=2)
   set.seed(Sys.time())
   #unlink('/tmp/log.txt')
+#  remote_host<-"aryczkowski@localhost:8090"
   srv_loc<-RemoteServer$new(remote_host, port=11002)
 #debug(environment(srv_loc$print)$private$execute_wait_)
 #debug(environment(srv_loc$print)$private$execute_)

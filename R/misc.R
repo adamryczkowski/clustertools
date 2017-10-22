@@ -1,5 +1,8 @@
 find_default_if<-function(target_ip=NULL){
   target_ip<-curl::nslookup(target_ip)
+  if(target_ip=='127.0.0.1'){
+    return('lo')
+  }
   if(is.null(target_ip)) {
     return(system("/sbin/ip route | awk '/default/ { print $5 }'", intern=TRUE))
   } else {
@@ -141,6 +144,7 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
       MyClusterEval(cl, list(
 #      parallel::clusterEvalQ(cl, list(
         free_mem_kb=as.numeric(system("grep MemAvailable /proc/meminfo | awk '{print $2}'", intern = TRUE)),
+        free_mem_kb2=as.numeric(system("grep MemFree /proc/meminfo | awk '{print $2}'", intern = TRUE)),
         mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
         peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
         cpu_time=as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)),
@@ -150,6 +154,10 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
   }
   if(!'list' %in% class(stats)) {
     stats <- get_current_load(cl, script_dir, pid, flag_include_top)
+  } else {
+    if(length(stats$free_mem_kb)==0) {
+      stats$free_mem_kb<-stats$free_mem_kb2
+    }
   }
   return(stats)
 }
@@ -206,7 +214,10 @@ copy_scripts_to_server<-function(cl) {
     }
     return(tmpdir)
   }
-  parallel::clusterExport(cl, c('make_scripts','all_scripts'), environment())
+  e<-new.env()
+  e$make_scripts<-make_scripts
+  e$all_scripts<-all_scripts
+  parallel::clusterExport(cl, c('make_scripts','all_scripts'), e)
   ans<-parallel::clusterEvalQ(cl,
                               {.tmp.dir<-make_scripts(all_scripts)
                               rm('make_scritps', 'scripts');.tmp.dir})[[1]]
@@ -232,26 +243,82 @@ compute_load_between=function(load_before, load_after) {
   return(ans)
 }
 
-can_connect_to_host<-function(ip) {
-  ans<-system(command = paste0('ping -c 1 ',ip, ' -W 1'), ignore.stdout = TRUE, ignore.stderr = TRUE)
+can_connect_to_host<-function(remote, master) {
+  remote_els<-XML::parseURI(paste0('ssh://', remote))
+  ans<-system(command = paste0('ping -c 1 ',remote_els$server, ' -W 1'), ignore.stdout = TRUE, ignore.stderr = TRUE)
   if(ans!=0) {
     ans<-paste0("Host ", ip, " cannot be reached by ICMP-ECHO (ping)")
     return(ans)
   }
-  ans<-system(command = paste0('timeout 2 nc -z ',ip, ' 22'), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  if(is.na(remote_els$port)){
+    remote_els$port<-22
+  }
+  ans<-system(command = paste0('timeout 2 nc -z ',remote_els$server, ' ', remote_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
   if(ans!=0){
     if(ans==125) {
-      ans=paste0("Host ", ip, " doesn't seem to respond on TCP port 22")
+      ans=paste0("Host ", remote, " doesn't seem to respond on TCP port ", remote_els$port)
     } else {
-      ans=paste0("Host ", ip, " rejects connections on TCP port 22")
+      ans=paste0("Host ", remote, " rejects connections on TCP port ", remote_els$port)
     }
     return(ans)
   }
-  ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', ip, ' exit'))
+  sshcmd<-paste0(if(remote_els$user=="") "" else paste0(remote_els$user, "@"), remote_els$server, ' -p ', remote_els$port)
+  ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd, " exit"))
   if(ans!=0){
-    ans=paste0("Cannot non-interactively estabilish SSH connection with ", ip, ". Try connecting manually using ssh ", ip, " and make sure it connects without any prompts.")
+    ans=paste0("Cannot non-interactively estabilish SSH connection with ", remote, ". Try connecting manually using ssh ", sshcmd, " and make sure it connects without any prompts.")
     return(ans)
   }
+
+  master_els<-XML::parseURI(paste0('ssh://', master))
+  if(is.na(remote_els$port)){
+    ans=paste0("You must give a proper port number")
+  }
+  ans<-system(command = paste0('timeout 2 nc -z localhost ', master_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  if(ans==0){
+    ans=paste0("Port ", master_els$port, " on our machine (server) is already open. Please choose free port on master")
+    return(ans)
+  }
+
+  #Check if the host has netcat
+  has_nc<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
+                               " -- which nc"), ignore.stdout = TRUE, ignore.stderr = TRUE)==0
+
+
+  if(has_nc) {
+    #Check if the port is closed from point of view of the remote host
+    ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
+                                 " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
+    if(ans!=0){
+      #Check the port after we estabilish a connection:
+      #1. Open the port on master
+      expr<-substitute(socketConnection(host=host, port = port, blocking=FALSE, server=TRUE, open="r+", timeout=3),
+                       list(host=master_els$server, port=master_els$port))
+      job<-parallel::mcparallel(expr)
+      #2. Check if the port is closed from point of view of the remote host
+      ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
+                                   " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
+      if(ans!=0) {
+        ans=paste0("Cannot connect to port ", master_els$port, " on ", master_els$port, " seen from the remote ", remote, " doesn't seem to connect with the localhost. Please check port forwarding and be sure to forward this port to local port ", master_els$port)
+        return(ans)
+      }
+      parallel::mccollect(job) #Close the port if it wasn't closed already
+
+    }
+
+    # expr<-substitute(socketConnection(host=host, port = port, blocking=FALSE, server=TRUE, open="r+", timeout=3),
+    #                  list(host=master_els$server, port=master_els$port))
+    # job<-parallel::mcparallel(expr)
+    # #2. Check if the port is closed from point of view of the remote host
+    # ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
+    #                              " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
+    # if(ans!=0){
+    #   ans=paste0("Cannot connect to port ", master_els$port, " on ", master_els$port, " seen from the remote ", remote, " doesn't seem to connect with the localhost. Please check port forwarding and be sure to forward this port to local port ", master_els$port)
+    #   return(ans)
+    # }
+    # parallel::mccollect(job) #Close the port if it wasn't closed already
+  }
+
+
   return("")
 }
 

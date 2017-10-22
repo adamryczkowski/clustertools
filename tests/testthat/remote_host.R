@@ -1,11 +1,14 @@
+futile.logger::flog.threshold(futile.logger::ERROR)
+futile.logger::flog.remove('mutex.unlock')
+futile.logger::flog.remove('mutex.lock')
 list_of_hosts<-list("192.168.10.134",
 #                    "10.55.181.54",
                     'localhost')
 
 
-get_first_host<-function() {
+get_first_host<-function(port=11011) {
   for(ip in list_of_hosts) {
-    if(can_connect_to_host(ip)=="") {
+    if(can_connect_to_host(ip, port)=="") {
       return(ip)
     }
   }
@@ -13,6 +16,3 @@ get_first_host<-function() {
 }
 remote_host<-get_first_host()
 
-futile.logger::flog.threshold(futile.logger::ERROR)
-futile.logger::flog.remove('mutex.unlock')
-futile.logger::flog.remove('mutex.lock')
