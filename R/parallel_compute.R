@@ -2,7 +2,7 @@
 RemoteServer<-R6::R6Class("RemoteServer",
   public = list(
     initialize=function(hostaddress, port="11011", network_interface=NULL, rscript=NULL) {
-      browser()
+      #browser()
       ouraddress<-port
       host_els<-XML::parseURI(paste0('ssh://', hostaddress))
       private$host_address_<-hostaddress
@@ -126,9 +126,17 @@ RemoteServer<-R6::R6Class("RemoteServer",
         rap<-paste0("Remote host ", self$host_address, ". Benchmarks and specifications not available yet.\n\n"
         )
       } else {
-        rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, " with ",
-                    self$cpu_cores, " core CPU and ",
-                    utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
+        cpuinfo<-paste0(if(self$cpu_count>1) {
+          paste0(self$cpu_count, " CPU machine")
+        } else {
+          "Machine"
+        }, " with ", self$cpu_cores, " independent cores", if(self$cpu_cores<self$cpu_threads) {
+          paste0(" and ", self$cpu_threads, " hyperthreading threads")
+        } else {
+          " and no hyperthreading"
+        })
+        rap<-paste0("Remote host ", self$host_name, " at ", self$host_address, ". A ", cpuinfo,
+                    ", ", utils:::format.object_size(self$mem_size, "auto"), " RAM.\n",
                     if(self$cpu_speed2=='') {
                       paste0("CPU speed measure: ", utils:::format.object_size(self$cpu_speed*1000000, "auto"), "/second\n")
                     } else {
@@ -429,6 +437,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
     host_address      = function() {private$host_address_},
     host_name      = function() {private$fill_capabilities(TRUE); private$capabilities_$host_name},
     cpu_cores         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_cores},
+    cpu_count         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_count},
+    cpu_threads         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_threads},
     cpu_speed         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_speed},
     cpu_speed2         = function() {private$fill_capabilities(TRUE); private$capabilities_$cpu_speed2},
     mem_size          = function() {private$fill_capabilities(TRUE); private$capabilities_$mem_size},
@@ -637,6 +647,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
     if(is.null(capabilities)) {
       private$capabilities_<-list(
         cpu_cores =NA,
+        cpu_count =NA,
+        cpu_threads =NA,
         cpu_speed =NA,
         cpu_speed2 =NA,
         mem_size =NA,
@@ -649,6 +661,8 @@ RemoteServer<-R6::R6Class("RemoteServer",
     } else{
       private$capabilities_<-list(
         cpu_cores =capabilities$cores,
+        cpu_count =capabilities$cpus,
+        cpu_threads =capabilities$threads,
         cpu_speed =capabilities$speed,
         cpu_speed2 =capabilities$speed2,
         mem_size =capabilities$mem_kb * 1024,

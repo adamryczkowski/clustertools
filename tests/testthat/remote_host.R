@@ -8,7 +8,7 @@ list_of_hosts<-list("192.168.10.134",
 
 get_first_host<-function(port=11011) {
   for(ip in list_of_hosts) {
-    if(can_connect_to_host(ip, port)=="") {
+    if(can_connect_to_host(ip, paste0("localhost:",port))=="") {
       return(ip)
     }
   }

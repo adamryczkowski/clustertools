@@ -12,7 +12,11 @@ find_default_if<-function(target_ip=NULL){
     pos<-which(routes_tab[1,]=='default')
     routes_tab<-t(sapply(routes[-pos], function(x) c(x[[1]], x[[3]])))
     pos<-which(iptools::ip_in_range(rep(target_ip, nrow(routes_tab)), routes_tab[,1]))
-    return(routes_tab[pos,2])
+    if(length(pos)==0) {
+      return(system("/sbin/ip route | awk '/default/ { print $5 }'", intern=TRUE))
+    } else {
+      return(routes_tab[pos,2])
+    }
   }
 }
 
@@ -22,11 +26,11 @@ ifaddr<-function(idev='lo') {
 
 get_cpu_capabilies<-function(cl) {
   capabilities<-MyClusterEval(cl, list(mem_kb=system("grep MemTotal /proc/meminfo | awk '{print $2}'", intern = TRUE),
-                                                cores=system('grep "^core id" /proc/cpuinfo | sort -u | wc -l', intern=TRUE),
+                                                cores=system('lscpu -p=cpu,core,socket | grep -v ^#', intern = TRUE),
                                                 speed=1/system.time(system('dd if=/dev/zero bs=3 count=1000000 2>/dev/null  | md5sum  >/dev/null'))[[3]],
                                                 speed2=
                                       if(system2("which", args="sysbench", stdout=FALSE)==0) {
-                                        as.numeric(system('sysbench --test=cpu --cpu-max-prime=2000 run | grep "total time:" | grep -Eo "[[:digit:].]+"', intern = TRUE))
+                                        as.numeric(system('sysbench --test=cpu --cpu-max-prime=20000 run | grep "total time:" | grep -Eo "[[:digit:].]+"', intern = TRUE))
                                       } else {
                                         ""
                                       },
@@ -39,13 +43,17 @@ get_cpu_capabilies<-function(cl) {
   # ))
   capabilities<-capabilities[[1]]
   capabilities$mem_kb<-as.numeric(capabilities$mem_kb)
-  capabilities$cores<-as.numeric(capabilities$cores)
+  cpu_matrix<-plyr::laply(purrr::map(capabilities$cores, ~stringr::str_split(.,pattern=stringr::fixed(','))[[1]]), identity)
+
+  capabilities$cores<-length(unique(cpu_matrix[,2]))
+  capabilities$cpus<-length(unique(cpu_matrix[,3]))
+  capabilities$threads<-length(unique(cpu_matrix[,1]))
 
   obj<-readBin('/dev/urandom', what=raw(), n=2*1000*1000)
   e<-new.env()
   assign('obj', obj, envir = e)
-  capabilities$net_send_speed<-1/(system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]/2000)
-  capabilities$net_receive_speed<-1/(system.time(MyClusterEval(cl, obj))[[3]]/2000)
+  capabilities$net_send_speed<-1/(system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]/20000)
+  capabilities$net_receive_speed<-1/(system.time(MyClusterEval(cl, obj))[[3]]/20000)
   # capabilities$net_send_speed<-1/(system.time(parallel::clusterExport(cl, 'obj', envir = e))[[3]]/2000)
   # capabilities$net_receive_speed<-1/(system.time(parallel::clusterEvalQ(cl, obj))[[3]]/2000)
 
@@ -247,7 +255,7 @@ can_connect_to_host<-function(remote, master) {
   remote_els<-XML::parseURI(paste0('ssh://', remote))
   ans<-system(command = paste0('ping -c 1 ',remote_els$server, ' -W 1'), ignore.stdout = TRUE, ignore.stderr = TRUE)
   if(ans!=0) {
-    ans<-paste0("Host ", ip, " cannot be reached by ICMP-ECHO (ping)")
+    ans<-paste0("Host ", remote_els$server, " cannot be reached by ICMP-ECHO (ping)")
     return(ans)
   }
   if(is.na(remote_els$port)){
@@ -263,14 +271,32 @@ can_connect_to_host<-function(remote, master) {
     return(ans)
   }
   sshcmd<-paste0(if(remote_els$user=="") "" else paste0(remote_els$user, "@"), remote_els$server, ' -p ', remote_els$port)
-  ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd, " exit"))
-  if(ans!=0){
-    ans=paste0("Cannot non-interactively estabilish SSH connection with ", remote, ". Try connecting manually using ssh ", sshcmd, " and make sure it connects without any prompts.")
-    return(ans)
+  while (TRUE) {
+    ans_txt<-suppressWarnings(system2("ssh", c("-o PasswordAuthentication=no -o BatchMode=yes ", sshcmd, " -- exit"), stderr=TRUE))
+    ans<-attr(ans_txt, 'status')
+
+    if(length(ans)>0){
+      if(stringr::str_detect(ans_txt, pattern = stringr::fixed("Host key verification failed"))) {
+        hostkey<-system(paste0("ssh-keyscan -p ", remote_els$port, ' ', remote_els$server), intern = TRUE, ignore.stderr = TRUE)
+        if(hostkey!='') {
+          write(hostkey,file="~/.ssh/known_hosts",append=TRUE)
+        }
+      } else {
+        ans=paste0("Cannot non-interactively estabilish SSH connection with ", remote,
+                   ". Try connecting manually using ssh ", sshcmd, " and make sure it connects without any prompts.")
+        return(ans)
+      }
+    } else {
+      break
+    }
   }
 
   master_els<-XML::parseURI(paste0('ssh://', master))
-  if(is.na(remote_els$port)){
+  if(is.na(master_els$port)){
+    if(is.numeric(master_els$server)) {
+      master_els$port<-as.numeric(master_els$server)
+      master_els$server<-"localhost"
+    }
     ans=paste0("You must give a proper port number")
   }
   ans<-system(command = paste0('timeout 2 nc -z localhost ', master_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
