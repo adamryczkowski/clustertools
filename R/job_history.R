@@ -20,8 +20,7 @@ JobHistory<-R6::R6Class("JobHistory",
     },
 
     run_task_=function(job_name, expr, env=new.env(), command, mutex) {
-      job <- private$create_job(job_name, command = command, mutex=mutex)
-
+      job <- private$create_job(job_name, command = command, mutex = mutex)
       job$job$run_task_(expr, env)
       return(list(job=job, jobnr=length(private$jobs_)))
     },
@@ -177,6 +176,7 @@ JobEntry<-R6::R6Class("JobEntry",
           return(FALSE)
         } else {
           ans <- private$job_$get_task_return_value(flag_clear_memory=TRUE)
+#          browser()
           if(!is.null(ans)) {
             if(!'try-error' %in% class(ans)) {
               if(! 'start_stats' %in% names(ans)){
@@ -189,6 +189,9 @@ JobEntry<-R6::R6Class("JobEntry",
               if(ans$tag=="benchmark") {
                 srv<-private$server_obj_
                 e<-environment(srv$print)
+                if(! 'ans' %in% names(ans)) {
+                  browser()
+                }
                 e$private$set_capabilities(ans$ans)
               }
               if(length(ans$ans)==1){
@@ -200,6 +203,7 @@ JobEntry<-R6::R6Class("JobEntry",
               } else {
                 private$ans_ <- ans$ans
               }
+              #On release code uncomment the following line:
               private$job_ <- NA
             } else {
               browser()
@@ -264,6 +268,10 @@ JobEntry<-R6::R6Class("JobEntry",
         return(TRUE)
       }
       private$job_$wait_for_task_finish(timeout=timeout)
+    },
+
+    control_pid = function() {
+      return(private$job_$pid)
     }
 
   ),

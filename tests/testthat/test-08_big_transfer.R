@@ -27,7 +27,7 @@ test_that(paste0("Executing a big transfer on ", remote_host), {
   a1<-srv_loc$send_objects(named_list_of_objects = list(obj=large_object), job_name = 'sending', timeout = 0)
 
   a2<-srv_loc$execute_job(job_name = 'check', expression = object.size(obj), timeout = 0)
-  expect_equal(a2, object.size(large_object))
+  expect_equal(a2, as.numeric(object.size(large_object)))
 
 #  debugonce(srv_loc$receive_objects)
   a3<-srv_loc$receive_objects(object_names = c("obj") , job_name = "receiving", timeout = 0)

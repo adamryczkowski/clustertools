@@ -49,14 +49,15 @@ get_cpu_capabilies<-function(cl) {
   capabilities$cpus<-length(unique(cpu_matrix[,3]))
   capabilities$threads<-length(unique(cpu_matrix[,1]))
 
-  obj<-readBin('/dev/urandom', what=raw(), n=2*1000*1000)
-  e<-new.env()
-  assign('obj', obj, envir = e)
-  capabilities$net_send_speed<-1/(system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]/20000)
-  capabilities$net_receive_speed<-1/(system.time(MyClusterEval(cl, obj))[[3]]/20000)
+#  obj<-readBin('/dev/urandom', what=raw(), n=2*1000*1000)
+#  e<-new.env()
+#  assign('obj', obj, envir = e)
+  #capabilities$net_send_speed<-1/(system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]/2000)
+  #capabilities$net_receive_speed<-1/(system.time(MyClusterEval(cl, obj))[[3]]/2000)
   # capabilities$net_send_speed<-1/(system.time(parallel::clusterExport(cl, 'obj', envir = e))[[3]]/2000)
   # capabilities$net_receive_speed<-1/(system.time(parallel::clusterEvalQ(cl, obj))[[3]]/2000)
-
+  capabilities$net_send_speed<-test_upload_time(cl)
+  capabilities$net_receive_speed<-test_download_time(cl)
   ping_time<-0
   for(i in seq(3)) {
     ping_time<-ping_time+system.time(MyClusterEval(cl, 2+2))[[3]]
@@ -64,6 +65,70 @@ get_cpu_capabilies<-function(cl) {
   capabilities$ping_time<-ping_time/3
 
   return(capabilities)
+}
+
+gen_geom_series<-function(n, start, end, steepness=0.7) {
+  offset<-(-1/steepness + 2)*start
+  s<-offset + exp(seq(from = log(start-offset), by = log((end-offset)/(start-offset))/(n-1), length.out = n))
+  return(s)
+}
+
+test_upload_time<-function(cl, bench_time=2) {
+  maxsize<-2*1000*1000
+  e<-new.env()
+  e$a<-123
+  ping_time<-0
+  for(i in seq(3)) {
+    ping_time<-ping_time+system.time(MyClusterExport(cl, 'a', envir=e))[[3]]
+  }
+  ping_time<-ping_time/3
+
+  obj_sizes<-gen_geom_series(n=10, start = 500, end=maxsize, steepness = 0.7)
+  for(obj_size in obj_sizes) {
+    obj<-.longobj<-as.raw(runif(obj_size)*256)
+    time<-system.time(MyClusterExport(cl, 'obj', envir = e))[[3]]-ping_time
+    if(time>bench_time) {
+      break;
+    }
+  }
+  return(obj_size/time)
+}
+
+test_download_time<-function(cl, bench_time=2) {
+  maxsize<-2*1000*1000
+  eval(substitute(MyClusterEval(cl, .longobj<-as.raw(runif(maxsize)*256)), list(maxsize=maxsize)))
+  ping_time<-0
+  for(i in seq(3)) {
+    ping_time<-ping_time+system.time(MyClusterEval(cl, .longobj[1:10]))[[3]]
+  }
+  ping_time<-ping_time/3
+
+  obj_sizes<-gen_geom_series(n=10, start = 500, end=maxsize, steepness = 0.7)
+  for(obj_size in obj_sizes) {
+    time<-eval(substitute(system.time(MyClusterEval(cl, .longobj[seq(obj_size)]))[[3]]-ping_time,
+               list(obj_size=obj_size)))
+    if(time>bench_time) {
+      break;
+    }
+  }
+
+  return(obj_size/time)
+}
+
+
+test_cpu<-function(bench_time=2) {
+  maxsize<-2*1000*1000*1000
+
+  obj_sizes<-gen_geom_series(n=10, start = 500*1000, end=maxsize, steepness = 0.7)
+  for(obj_size in obj_sizes) {
+    obj<-.longobj<-as.raw(runif(obj_size)*256)
+    time<-system.time(memCompress(obj, type='xz'))[[3]]
+    if(time>bench_time) {
+      break;
+    }
+  }
+  return(obj_size/time)
+
 }
 
 
@@ -93,7 +158,8 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
         mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
         peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
         cpu_time=as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)),
-        wall_time=as.numeric(Sys.time())
+        wall_time=as.numeric(Sys.time()),
+        pid=Sys.getpid()
       ))[[1]],
       list(script_dir=script_dir, pid=pid)))
   } else {
@@ -156,7 +222,8 @@ get_current_load<-function(cl, script_dir, pid, flag_include_top=FALSE) {
         mem_kb=as.numeric(system2(file.path(script_dir, 'get_current_mem.sh'),stdout=TRUE)),
         peak_mem_kb=as.numeric(system2(file.path(script_dir, 'get_peak_mem.sh'),stdout=TRUE)),
         cpu_time=as.numeric(system2(file.path(script_dir, 'current_time.sh'), args = pid ,stdout=TRUE)),
-        wall_time=as.numeric(Sys.time())
+        wall_time=as.numeric(Sys.time()),
+        pid=Sys.getpid()
       ))[[1]],
       list(script_dir=script_dir, pid=pid)))
   }
@@ -251,16 +318,77 @@ compute_load_between=function(load_before, load_after) {
   return(ans)
 }
 
-can_connect_to_host<-function(remote, master) {
-  remote_els<-XML::parseURI(paste0('ssh://', remote))
+parse_address<-function(address, flag_assume_localhost=FALSE, default_port=NA) {
+  address_els<-XML::parseURI(paste0('ssh://', address))
+
+  if(flag_assume_localhost){
+    if(is.na(address_els$port)){
+      if(is.numeric(address_els$server)) {
+        address_els$port<-as.numeric(address_els$server)
+        address_els$server<-"localhost"
+      }
+      stop(paste0("You must give a proper port number"))
+    }
+  }
+
+  if(!is.na(default_port)) {
+    if(is.na(address_els$port)) {
+      address_els$port<-default_port
+    }
+  }
+
+  address_els$sshcmd<-paste0(if(address_els$user=="") "" else paste0(address_els$user, "@"), address_els$server, ' -p ', address_els$port)
+
+  return(address_els)
+}
+
+can_host_connect_to_us<-function(remote, ouraddress) {
+  remote_els<-parse_address(remote, default_port = 22)
+  ouraddress_els<-parse_address(ouraddress, flag_assume_localhost = TRUE)
+
+  ans<-system(command = paste0('timeout 2 nc -z localhost ', ouraddress_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
+  if(ans==0){
+    paste0("Port ", ouraddress_els$port, " on our machine (server) is already open. Please choose free port on master")
+    return(ans)
+  }
+
+  #Check if the host has netcat
+  has_nc<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', remote_els$sshcmd,
+                                  " -- which nc"), ignore.stdout = TRUE, ignore.stderr = TRUE)==0
+
+
+  if(has_nc) {
+    #Check if the port is closed from point of view of the remote host
+    ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', remote_els$sshcmd,
+                                 " -- timeout 2 nc -z ", ouraddress_els$server, " ", ouraddress_els$port))
+    if(ans!=0){
+      #Check the port after we estabilish a connection:
+      #1. Open the port on master
+      expr<-substitute(socketConnection(host=host, port = port, blocking=FALSE, server=TRUE, open="r+", timeout=3),
+                       list(host=ouraddress_els$server, port=ouraddress_els$port))
+      job<-parallel::mcparallel(expr)
+      #2. Check if the port is closed from point of view of the remote host
+      ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', remote_els$sshcmd,
+                                   " -- timeout 2 nc -z ", ouraddress_els$server, " ", ouraddress_els$port))
+      if(ans!=0) {
+        ans=paste0("Cannot connect to port ", ouraddress_els$port, " on ", ouraddress_els$port, " seen from the remote ", remote, " doesn't seem to connect with the localhost. Please check port forwarding and be sure to forward this port to local port ", ouraddress_els$port)
+        return(ans)
+      }
+      parallel::mccollect(job) #Close the port if it wasn't closed already
+
+    }
+  }
+  return("")
+}
+
+can_connect_to_host<-function(remote, master, master_aux=NULL) {
+  remote_els<-parse_address(remote, default_port = 22)
   ans<-system(command = paste0('ping -c 1 ',remote_els$server, ' -W 1'), ignore.stdout = TRUE, ignore.stderr = TRUE)
   if(ans!=0) {
     ans<-paste0("Host ", remote_els$server, " cannot be reached by ICMP-ECHO (ping)")
     return(ans)
   }
-  if(is.na(remote_els$port)){
-    remote_els$port<-22
-  }
+
   ans<-system(command = paste0('timeout 2 nc -z ',remote_els$server, ' ', remote_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
   if(ans!=0){
     if(ans==125) {
@@ -270,9 +398,9 @@ can_connect_to_host<-function(remote, master) {
     }
     return(ans)
   }
-  sshcmd<-paste0(if(remote_els$user=="") "" else paste0(remote_els$user, "@"), remote_els$server, ' -p ', remote_els$port)
+
   while (TRUE) {
-    ans_txt<-suppressWarnings(system2("ssh", c("-o PasswordAuthentication=no -o BatchMode=yes ", sshcmd, " -- exit"), stderr=TRUE))
+    ans_txt<-suppressWarnings(system2("ssh", c("-o PasswordAuthentication=no -o BatchMode=yes ", remote_els$sshcmd, " -- exit"), stderr=TRUE))
     ans<-attr(ans_txt, 'status')
 
     if(length(ans)>0){
@@ -283,7 +411,7 @@ can_connect_to_host<-function(remote, master) {
         }
       } else {
         ans=paste0("Cannot non-interactively estabilish SSH connection with ", remote,
-                   ". Try connecting manually using ssh ", sshcmd, " and make sure it connects without any prompts.")
+                   ". Try connecting manually using `ssh ", remote_els$sshcmd, "` and make sure it connects without any prompts.")
         return(ans)
       }
     } else {
@@ -291,59 +419,17 @@ can_connect_to_host<-function(remote, master) {
     }
   }
 
-  master_els<-XML::parseURI(paste0('ssh://', master))
-  if(is.na(master_els$port)){
-    if(is.numeric(master_els$server)) {
-      master_els$port<-as.numeric(master_els$server)
-      master_els$server<-"localhost"
-    }
-    ans=paste0("You must give a proper port number")
-  }
-  ans<-system(command = paste0('timeout 2 nc -z localhost ', master_els$port), ignore.stdout = TRUE, ignore.stderr = TRUE)
-  if(ans==0){
-    ans=paste0("Port ", master_els$port, " on our machine (server) is already open. Please choose free port on master")
+  ans<-can_host_connect_to_us(remote = remote, ouraddress = master)
+  if(ans != "") {
     return(ans)
   }
 
-  #Check if the host has netcat
-  has_nc<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
-                               " -- which nc"), ignore.stdout = TRUE, ignore.stderr = TRUE)==0
-
-
-  if(has_nc) {
-    #Check if the port is closed from point of view of the remote host
-    ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
-                                 " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
-    if(ans!=0){
-      #Check the port after we estabilish a connection:
-      #1. Open the port on master
-      expr<-substitute(socketConnection(host=host, port = port, blocking=FALSE, server=TRUE, open="r+", timeout=3),
-                       list(host=master_els$server, port=master_els$port))
-      job<-parallel::mcparallel(expr)
-      #2. Check if the port is closed from point of view of the remote host
-      ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
-                                   " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
-      if(ans!=0) {
-        ans=paste0("Cannot connect to port ", master_els$port, " on ", master_els$port, " seen from the remote ", remote, " doesn't seem to connect with the localhost. Please check port forwarding and be sure to forward this port to local port ", master_els$port)
-        return(ans)
-      }
-      parallel::mccollect(job) #Close the port if it wasn't closed already
-
+  if(!is.null(master_aux)) {
+    ans<-can_host_connect_to_us(remote = remote, ouraddress = master_aux)
+    if(ans != "") {
+      return(ans)
     }
-
-    # expr<-substitute(socketConnection(host=host, port = port, blocking=FALSE, server=TRUE, open="r+", timeout=3),
-    #                  list(host=master_els$server, port=master_els$port))
-    # job<-parallel::mcparallel(expr)
-    # #2. Check if the port is closed from point of view of the remote host
-    # ans<-system(command = paste0('ssh -o PasswordAuthentication=no -o BatchMode=yes ', sshcmd,
-    #                              " -- timeout 2 nc -z ", master_els$server, " ", master_els$port))
-    # if(ans!=0){
-    #   ans=paste0("Cannot connect to port ", master_els$port, " on ", master_els$port, " seen from the remote ", remote, " doesn't seem to connect with the localhost. Please check port forwarding and be sure to forward this port to local port ", master_els$port)
-    #   return(ans)
-    # }
-    # parallel::mccollect(job) #Close the port if it wasn't closed already
   }
-
 
   return("")
 }
@@ -358,10 +444,14 @@ get_call_stack<-function(nskip=1) {
     m <- length(xi)
     if (!is.null(srcref <- attr(xi, "srcref"))) {
       srcfile_tmp <- attr(srcref, "srcfile")
-      srcfile[[i]]<-pathcat::make.path.relative(target.path = normalizePath(srcfile_tmp$filename), base.path = getwd())
-      srcline[[i]]<-srcref[1L]
+      if(srcfile_tmp$filename!="") {
+        srcfile[[i]]<-pathcat::make.path.relative(target.path = normalizePath(srcfile_tmp$filename), base.path = getwd())
+        srcline[[i]]<-srcref[1L]
+      } else {
+        srcexpr[[i]]<-paste0(deparse(xi), collapse = "\n")
+      }
     }
-    srcexpr[[i]]=paste0(deparse(xi), collapse = "\n")
+    srcexpr[[i]]<-paste0(deparse(xi), collapse = "\n")
   }
   return(data.frame(expr=srcexpr[-seq(n-nskip, n)], file=srcfile[-seq(n-nskip, n)], line=as.numeric(srcline[-seq(n-nskip, n)]), stringsAsFactors = FALSE))
 }
@@ -393,20 +483,22 @@ lock_mutex<-function(m) {
                            Sys.getpid(),
                            format_call_stack(trace),
                            a, synchronicity::describe(m)@description$shared.name, name='mutex.lock')
-  synchronicity::lock(m)
+  ans<-synchronicity::lock(m)
   futile.logger::flog.info("PID %s %s Mutex %s (id %s) is locked",
                            Sys.getpid(),
                            format_call_stack(trace),
                            a, synchronicity::describe(m)@description$shared.name, name='mutex.lock')
+  ans
 }
 
 unlock_mutex<-function(m) {
   trace<-get_call_stack()
   a<-deparse(substitute(m))
-  synchronicity::unlock(m)
+  ans<-synchronicity::unlock(m)
   futile.logger::flog.info("PID %s %s Mutex %s (id %s) is UNlocked",
                            Sys.getpid(),
                            format_call_stack(trace),
                            a, synchronicity::describe(m)@description$shared.name,
                            name='mutex.unlock')
+  ans
 }

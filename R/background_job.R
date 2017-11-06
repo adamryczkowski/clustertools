@@ -7,7 +7,7 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
      expr<-substitute(expr_)
      self$run_task_(expr, env, flag_log_command=FALSE)
    },
-   run_task_=function(expr, env=new.env(), flag_log_command=FALSE) {
+   run_task_=function(expr, env=new.env(), flag_log_command=TRUE) {
      if(self$is_task_running()) {
        stop("Another background task is already running!")
      }
@@ -15,8 +15,10 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
      #     browser()
      env$expr_BackgroundTask_<-expr
      private$job_ <- eval(quote(parallel::mcparallel(expr_BackgroundTask_)), envir = env)
+     private$pid_ <- private$job_$pid
      if(flag_log_command){
        private$command_ <- deparse(expr)
+       private$env_ <- env
      } else {
        private$command_ <- NULL
      }
@@ -31,6 +33,7 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
 #          browser()
           private$ans_<-ans[[as.character(self$task_id)]]
           parallel::mccollect(private$job_, wait=TRUE)
+          #On release code uncomment the following line:
           private$job_<-NA
           return(FALSE)
         }
@@ -42,7 +45,8 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
      self$wait_for_task_finish()
      ans<-self$task_return_value
      if(flag_clear_memory) {
-       private$ans_ <- NULL
+       #On release code uncomment the following line:
+       #private$ans_ <- NULL
      }
      return(ans)
    },
@@ -61,6 +65,10 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
          return(FALSE)
        }
        private$ans_<-ans[[as.character(self$task_id)]]
+#       if(!is.list(private$ans_$ans)||length(private$ans_$ans)!=6) {
+#         browser()
+#       }
+       #On release code uncomment the following line:
        private$job_<-NA
      }
      return(TRUE)
@@ -68,6 +76,7 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
  ),
  active = list(
    job = function() {private$job_},
+   pid = function() {private$pid_},
    task_id=function() {
      if(!'parallelJob' %in% class(private$job_)){
        return(NA)
@@ -88,7 +97,9 @@ BackgroundTask<-R6::R6Class("BackgroundTask",
  private = list(
    job_=NA,
    command_=NA,
-   ans_='Not initialized'
+   env_=NA,
+   ans_='Not initialized',
+   pid_=NA
  )
 
 )

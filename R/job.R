@@ -52,7 +52,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
     },
 
     #Gets all the jobs that are sitting in front of us in the queue
-    count_jobs_scheduled_after=function() {
+    count_jobs_scheduled_before=function() {
       running_job_nr <- private$job_history_$get_running_job_nr()
       if(is.na(running_job_nr)) {
         return(0)
@@ -101,7 +101,7 @@ RemoteJob<-R6::R6Class("RemoteJob",
       if(self$is_scheduled()) {
         ans=list(state='scheduled',
                  name=private$job_entry_$name,
-                 queue_length=self$count_jobs_scheduled_after(),
+                 queue_length=self$count_jobs_scheduled_before(),
                  command=private$job_entry_$command
                  )
       } else if (self$is_running()) {
@@ -129,7 +129,8 @@ RemoteJob<-R6::R6Class("RemoteJob",
                     } else {
                       '\n'
                     },
-                    'State: ', stats$state,'\n')
+                    'State: ', stats$state,"\n",
+                    'Control thread PID: ', private$job_entry_$control_pid(), '\n')
 
       if(stats$state == 'scheduled') {
         rap <- paste0(rap, "Number of tasks before: ", stats$queue_length)
@@ -143,7 +144,8 @@ RemoteJob<-R6::R6Class("RemoteJob",
                       utils:::format.object_size(stats$mem_kb_delta*1024, "auto"), ")\n",
                       "Task peak memory usage (delta): ",
                       utils:::format.object_size(stats$peak_mem_kb*1024, "auto"), " (",
-                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n"
+                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n",
+                      'Remote PID: ', private$job_entry_$pid, '\n'
         )
       } else if (stats$state =='finished') {
         rap <- paste0(rap,
@@ -152,7 +154,8 @@ RemoteJob<-R6::R6Class("RemoteJob",
                       "Wall time on task: ", lubridate::as.duration(round(stats$wall_time,2)), "\n",
                       "Task peak memory usage (delta): ",
                       utils:::format.object_size(stats$peak_mem_kb*1024, "auto"), " (",
-                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n"
+                      utils:::format.object_size(stats$peak_mem_kb_delta*1024, "auto"),")\n",
+                      'Remote PID: ', private$job_entry_$pid, '\n'
         )
       }
       cat(rap)

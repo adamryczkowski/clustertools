@@ -44,6 +44,54 @@ send_file<-function(cl, file_path, remote_path, flag_check_first=TRUE) {
   }
 }
 
+receive_file<-function(cl, local_path, remote_path, flag_check_first=TRUE) {
+  if(!file.exists(local_path)) {
+    flag_check_first=FALSE
+  }
+  if(flag_check_first) {
+    our_hash<-tools::md5sum(local_path)
+  } else {
+    our_hash<-""
+  }
+
+  a<-eval(substitute(parallel::clusterEvalQ(cl,{
+    if(file.exists(remote_path)) {
+      if(our_hash!="") {
+        hash<-tools::md5sum(remote_path)
+      } else {
+        hash<-"!"
+      }
+      if(hash!=our_hash) {
+        n<-file.size(remote_path)
+        file_handle<-file(remote_path, 'rb')
+        a<-readBin(file_handle, raw(), n=n)
+        a
+      } else {
+        "file already present"
+      }
+    } else {
+      paste0("file ", remote_path, " not found on ", system("hostname", intern = TRUE))
+    }
+  }),list(remote_path=remote_path, cl=cl, our_hash=our_hash)))
+
+  if('character' %in% class(a)) {
+    if(a=="file already present") {
+      return(local_path)
+    } else {
+      return(stop(a))
+    }
+  }
+
+  if(!dir.exists(dirname(local_path))) {
+    dir.create(dirname(local_path), recursive = TRUE)
+  }
+
+  f<-file(local_path, 'wb')
+  writeBin(a[[1]], f, useBytes = TRUE)
+  close(f)
+  return(local_path)
+}
+
 send_big_objects<-function(cl, objects, compress=NULL) {
   if(is.null(compress)) {
     if(as.numeric(object.size(objects)) < 100000) {

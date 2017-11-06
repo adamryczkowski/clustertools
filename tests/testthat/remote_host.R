@@ -16,3 +16,5 @@ get_first_host<-function(port=11011) {
 }
 remote_host<-get_first_host()
 
+#can_connect_to_host("192.168.10.134", "localhost:11011")
+#can_connect_to_host("localhost", "localhost:11011")

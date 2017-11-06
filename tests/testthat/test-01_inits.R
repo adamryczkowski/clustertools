@@ -20,8 +20,7 @@ test_that(paste0("Server start and stop on ", remote_host), {
   #srv_loc$get_count_statistics()$finished;
   expect_equal(srv_loc$get_count_statistics()$finished, expected = 1)
   expect_equal(srv_loc$get_count_statistics()$queued, expected = 0)
-  expect_false(is.null(srv_loc$get_last_job()))
-  expect_length(srv_loc$get_current_load(), n=3)
+  expect_length(srv_loc$get_current_load(), n=4)
   expect_error(srv_loc$get_job_return_value('bla'))
   expect_false(srv_loc$is_busy())
   srv_loc$finalize()
